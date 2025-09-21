@@ -1,135 +1,68 @@
 cmake_minimum_required(VERSION 3.24)
 project(cis565_path_tracer LANGUAGES CUDA CXX)
 
-set_property(GLOBAL PROPERTY USE_FOLDERS ON)
-
-set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake" ${CMAKE_MODULE_PATH})
-
-set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
-set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
-
-# Enable C++17 for host code
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CUDA_STANDARD 17)
 set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 
-# Set a default build type if none was specified
-if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
-    SET(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build." FORCE)
-    # Set the possible values of build type for cmake-gui
-    SET_PROPERTY(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS "Debug" "Release" "MinSizeRel" "RelWithDebInfo")
-endif()
-
-find_package(OpenGL REQUIRED)
-
-if(UNIX)
-    include_directories("${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES}")
-    find_package(glfw3 REQUIRED)
-    find_package(GLEW REQUIRED)
-    set(GL_LIBRARIES glfw ${GLEW_LIBRARIES} ${OPENGL_LIBRARIES})
-else(UNIX)
-    set(EXTERNAL "${CMAKE_SOURCE_DIR}/external")
-
-    set(GLFW_ROOT_DIR ${EXTERNAL})
-    set(GLFW_USE_STATIC_LIBS ON)
-    find_package(GLFW REQUIRED)
-
-    set(GLEW_ROOT_DIR ${EXTERNAL})
-    set(GLEW_USE_STATIC_LIBS ON)
-    find_package(GLEW REQUIRED)
-
-    add_definitions(${GLEW_DEFINITIONS})
-    include_directories(${GLEW_INCLUDE_DIR} ${GLFW_INCLUDE_DIR})
-    set(GL_LIBRARIES ${GLEW_LIBRARY} ${GLFW_LIBRARY} ${OPENGL_LIBRARY})
-endif(UNIX)
-
-set(GLM_ROOT_DIR "${CMAKE_SOURCE_DIR}/external")
-find_package(GLM REQUIRED)
-include_directories(${GLM_INCLUDE_DIRS})
-
-set(headers
-    src/image.h
-    src/interactions.h
-    src/intersections.h
-    src/glslUtility.hpp
-    src/pathtrace.h
-    src/scene.h
-    src/sceneStructs.h
-    src/utilities.h
-    src/bsdf.h
-    src/ggx.h
-)
-
-set(sources
+set(SOURCES
     src/main.cpp
-    src/stb.cpp
-    src/image.cpp
-    src/glslUtility.cpp
-    src/pathtrace.cu
-    src/intersections.cu
-    src/interactions.cu
-    src/scene.cpp
-    src/utilities.cpp
-    src/bsdf.cu
-    src/ggx.cu
+    src/cuda_test.cu
 )
 
-set(imgui_headers
-    src/ImGui/imconfig.h
-    src/ImGui/imgui.h
-    src/ImGui/imgui_impl_glfw.h
-    src/ImGui/imgui_impl_opengl3.h
-    src/ImGui/imgui_impl_opengl3_loader.h
-    src/ImGui/imgui_internal.h
-    src/ImGui/imstb_rectpack.h
-    src/ImGui/imstb_textedit.h
-    src/ImGui/imstb_truetype.h
+set(HEADERS
+    src/cuda_test.h
 )
 
-set(imgui_sources
-    src/ImGui/imgui.cpp
-    src/ImGui/imgui_demo.cpp
-    src/ImGui/imgui_draw.cpp
-    src/ImGui/imgui_impl_glfw.cpp
-    src/ImGui/imgui_impl_opengl3.cpp
-    src/ImGui/imgui_tables.cpp
-    src/ImGui/imgui_widgets.cpp
-)
+file(GLOB IMGUI_SOURCES external/imgui/*.cpp)
 
-list(SORT headers)
-list(SORT sources)
-list(SORT imgui_headers)
-list(SORT imgui_sources)
+# Build ImGUI as a static library so that it doesn't show up in the path tracer project tree
+add_library(imgui STATIC ${IMGUI_SOURCES})
+target_include_directories(imgui PRIVATE external/imgui external/volk-1.4.304 external/vulkan)
+target_compile_definitions(imgui PRIVATE IMGUI_IMPL_VULKAN_USE_VOLK VK_USE_PLATFORM_WIN32_KHR)
 
-source_group("Headers" FILES ${headers})
-source_group("Sources" FILES ${sources})
-source_group("ImGui\\Headers" FILES ${imgui_headers})
-source_group("ImGui\\Sources" FILES ${imgui_sources})
+# Similarly build vk-bootstrap as a static library
+file(GLOB VK_BOOTSTRAP_SOURCES external/vk-bootstrap/*.cpp)
+add_library(vk_bootstrap STATIC ${VK_BOOTSTRAP_SOURCES})
+target_include_directories(vk_bootstrap PRIVATE external/vk-bootstrap external/vulkan)
 
-set(scene_files
-    scenes/cornell.json
-    scenes/sphere.json
-)
-source_group("Scenes" FILES ${scene_files})
+add_executable(${PROJECT_NAME} ${SOURCES} ${HEADERS})
 
-#add_subdirectory(src/ImGui)
-#add_subdirectory(stream_compaction)  # TODO: uncomment if using your stream compaction
+# Don't include third party libraries in the VS project tree
+set(ALL_PROJECT_FILES ${SOURCES} ${HEADERS})
+source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${ALL_PROJECT_FILES})
 
-add_executable(${CMAKE_PROJECT_NAME} ${sources} ${headers} ${imgui_sources} ${imgui_headers} ${scene_files})
+set_target_properties(${PROJECT_NAME} PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
+set_target_properties(${PROJECT_NAME} PROPERTIES CUDA_ARCHITECTURES native)
 
-target_link_libraries(${CMAKE_PROJECT_NAME}
-    ${GL_LIBRARIES}
-    #stream_compaction  # TODO: uncomment if using your stream compaction
-)
-set(OPTIX_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/external/include/optix")
-include_directories(${OPTIX_INCLUDE_DIR})
+target_compile_definitions(${PROJECT_NAME} PRIVATE IMGUI_IMPL_VULKAN_USE_VOLK VK_USE_PLATFORM_WIN32_KHR)
 
-set_target_properties(${CMAKE_PROJECT_NAME} PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
-set_target_properties(${CMAKE_PROJECT_NAME} PROPERTIES CUDA_ARCHITECTURES native)
+target_include_directories(${PROJECT_NAME} PRIVATE 
+    external/imgui 
+    external/volk-1.4.304 
+    external/vulkan 
+    external/glm
+    external/SDL-3.2.22/include
+    external/tinygltf-2.9.6
+    external/vk-bootstrap
+    external/Optix-9.0.0/include)
 
-target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE "$<$<AND:$<CONFIG:Debug,RelWithDebInfo>,$<COMPILE_LANGUAGE:CUDA>>:-G;-src-in-ptx;--extended-lambda>")
-target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE "$<$<AND:$<CONFIG:Release>,$<COMPILE_LANGUAGE:CUDA>>:-lineinfo;-src-in-ptx;--extended-lambda>")
+add_subdirectory(external/volk-1.4.304)
 
-set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT ${CMAKE_PROJECT_NAME})
+target_link_libraries(${PROJECT_NAME} PRIVATE 
+    imgui
+    vk_bootstrap
+    ${CMAKE_CURRENT_SOURCE_DIR}/external/vulkan/vulkan/bin/vulkan-1.lib 
+    ${CMAKE_CURRENT_SOURCE_DIR}/external/SDL-3.2.22/lib/SDL3.lib 
+    volk_headers)
 
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    ${CMAKE_CURRENT_SOURCE_DIR}/external/SDL-3.2.22/lib/SDL3.dll
+    $<TARGET_FILE_DIR:${PROJECT_NAME}>)
+
+if(WIN32)
+    if(MSVC)
+        target_compile_options(${PROJECT_NAME} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:/MP>) # Enable multithread compilation
+    endif()
+endif()
