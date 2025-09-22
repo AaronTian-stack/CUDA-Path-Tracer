@@ -7,6 +7,8 @@
 #define TINYGLTF_IMPLEMENTATION
 #define STB_IMAGE_IMPLEMENTATION
 #define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "application.h"
+#include "pathtracer.h"
 #include "tiny_gltf.h"
 
 int main()
@@ -21,5 +23,9 @@ int main()
     printf("host\n");
     glm::vec3 vec(1.0f, 2.0f, 3.0f);
     printf("GLM Vector: (%f, %f, %f)\n", vec.x, vec.y, vec.z);
+
+    PathTracer app;
+    app.run(true);
+
     return EXIT_SUCCESS;
 }

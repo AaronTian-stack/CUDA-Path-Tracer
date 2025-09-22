@@ -8,10 +8,18 @@ set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 set(SOURCES
     src/main.cpp
     src/cuda_test.cu
+    src/application.cpp
+    src/pathtracer.cpp
+    src/vk/vk_window.cpp
+    src/vk/vk_context.cpp
 )
 
 set(HEADERS
     src/cuda_test.h
+    src/application.h
+    src/pathtracer.h
+    src/vk/vk_window.h
+    src/vk/vk_context.h
 )
 
 file(GLOB IMGUI_SOURCES external/imgui/*.cpp)
@@ -62,7 +70,8 @@ add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
     $<TARGET_FILE_DIR:${PROJECT_NAME}>)
 
 if(WIN32)
-    if(MSVC)
-        target_compile_options(${PROJECT_NAME} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:/MP>) # Enable multithread compilation
-    endif()
+    # NVCC only works with MSVC on Windows so no need to check for it
+    target_compile_options(${PROJECT_NAME} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:/MP>) # Enable multithread compilation
+else()
+    # TODO: Linux?
 endif()
