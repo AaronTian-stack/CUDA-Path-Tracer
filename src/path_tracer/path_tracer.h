@@ -22,7 +22,7 @@ struct PathTracerSettings
 
 class PathTracer : public Application
 {
-	OptiXDenoiser m_denoiser;
+	OptiXDenoiser m_denoiser{};
 
 	struct Images
 	{
@@ -37,8 +37,10 @@ class PathTracer : public Application
 
 	pt::VulkanTexture m_texture{}; // CUDA is going to write to this texture
 	pt::InteropHandles m_interop{};
+	std::array<CUDASemaphore, MAX_FRAMES_IN_FLIGHT> m_cuda_semaphores{};
 	std::array<vk::CommandBuffer, MAX_FRAMES_IN_FLIGHT> m_cmd_bufs{};
 	PathTracerSettings m_settings;
+	cudaExternalSemaphore_t m_cu_semaphores[MAX_FRAMES_IN_FLIGHT]{};
 
 protected:
 	void init_window() override;

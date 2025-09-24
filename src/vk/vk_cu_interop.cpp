@@ -1,7 +1,6 @@
 #include "vk_cu_interop.h"
 
 #include <cuda_runtime_api.h>
-#include <driver_functions.h>
 
 static void free_after_failure(pt::InteropHandles* interop)
 {
@@ -21,13 +20,10 @@ bool import_vk_texture_cuda(const pt::VulkanTexture& texture, pt::InteropHandles
     const auto width = texture.extent.width;
 	const auto height = texture.extent.height;
 
-    cudaExternalMemoryHandleDesc ext_mem_desc
-	{
-		.type = cudaExternalMemoryHandleTypeOpaqueWin32,
-		.handle = { .win32 = { .handle = texture.win32_handle } },
-		.size = texture.memory_size,
-		.flags = 0,
-	};
+    cudaExternalMemoryHandleDesc ext_mem_desc{};
+    ext_mem_desc.type = cudaExternalMemoryHandleTypeOpaqueWin32;
+	ext_mem_desc.handle.win32.handle = texture.win32_handle;
+	ext_mem_desc.size = texture.memory_size;
 
     cudaError_t err = cudaImportExternalMemory(&interop->ext_mem, &ext_mem_desc);
     if (err != cudaSuccess)
@@ -40,7 +36,7 @@ bool import_vk_texture_cuda(const pt::VulkanTexture& texture, pt::InteropHandles
     {
 		.offset = 0,
 		.formatDesc = cudaCreateChannelDesc(8, 8, 8, 8, cudaChannelFormatKindUnsigned),
-		.extent = make_cudaExtent(width, height, 0), // Depth is 0 not 1, otherwise interop will not work
+		.extent = {width, height, 0}, // Depth is 0 not 1, otherwise interop will not work
 		.flags = cudaArraySurfaceLoadStore,
 		.numLevels = 1,
         .reserved = {},
@@ -82,4 +78,12 @@ void free_interop_handles_cuda(pt::InteropHandles* interop)
     interop->mip_array = nullptr;
     cudaDestroyExternalMemory(interop->ext_mem);
     interop->ext_mem = nullptr;
+}
+
+bool import_vk_semaphore_cuda(const CUDASemaphore& semaphore, cudaExternalSemaphore_t* cu_semaphore)
+{
+    cudaExternalSemaphoreHandleDesc sem_desc{};
+	sem_desc.type = cudaExternalSemaphoreHandleTypeOpaqueWin32;
+	sem_desc.handle.win32.handle = semaphore.handle;
+    return cudaImportExternalSemaphore(cu_semaphore, &sem_desc) == cudaSuccess;
 }

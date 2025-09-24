@@ -250,6 +250,51 @@ bool pt::VulkanContext::create_semaphore(vk::Semaphore* semaphore, bool is_timel
     return true;
 }
 
+bool pt::VulkanContext::create_cuda_semaphore(CUDASemaphore* semaphore) const
+{
+    vk::ExportSemaphoreCreateInfo export_info
+	{
+        .handleTypes = vk::ExternalSemaphoreHandleTypeFlagBits::eOpaqueWin32
+    };
+    vk::SemaphoreCreateInfo sem_info
+	{
+        .pNext = &export_info
+    };
+    const auto result = m_logical_device.createSemaphore(sem_info);
+    if (result.result != vk::Result::eSuccess) 
+    {
+        return false;
+	}
+    auto& cuda_semaphore = result.value;
+
+    vk::SemaphoreGetWin32HandleInfoKHR get_handle_info
+	{
+        .semaphore = cuda_semaphore,
+        .handleType = vk::ExternalSemaphoreHandleTypeFlagBits::eOpaqueWin32,
+    };
+    const auto h_result = m_logical_device.getSemaphoreWin32HandleKHR(get_handle_info);
+    if (h_result.result != vk::Result::eSuccess)
+    {
+        m_logical_device.destroySemaphore(cuda_semaphore);
+        return false;
+    }
+	const auto handle = h_result.value;
+
+    *semaphore =
+    {
+	    .semaphore = cuda_semaphore,
+	    .handle = handle,
+	};
+
+    return true;
+}
+
+void pt::VulkanContext::destroy_cuda_semaphore(CUDASemaphore* semaphore) const
+{
+    m_logical_device.destroySemaphore(semaphore->semaphore);
+    semaphore->semaphore = VK_NULL_HANDLE;
+}
+
 vk::UniqueSemaphore pt::VulkanContext::create_unique_semaphore(const vk::Semaphore& semaphore) const
 {
 	return vk::UniqueSemaphore(semaphore, m_logical_device);

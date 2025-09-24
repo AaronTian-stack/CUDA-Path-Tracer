@@ -3,6 +3,8 @@
 #include <csignal>
 #include <imgui.h>
 #include <imgui_internal.h>
+#include <cuda_runtime.h>
+#include <SDL3/SDL.h>
 
 #include "cuda_pt.h"
 #include "../vk/vk_cu_interop.h"
@@ -27,6 +29,12 @@ void PathTracer::create()
 	m_context.create_texture(vk::Format::eR8G8B8A8Unorm, {800, 800}, &m_texture);
 	THROW_IF_FALSE(import_vk_texture_cuda(m_texture, &m_interop));
 
+	for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+	{
+		THROW_IF_FALSE(m_context.create_cuda_semaphore(&m_cuda_semaphores[i]));
+		THROW_IF_FALSE(import_vk_semaphore_cuda(m_cuda_semaphores[i], &m_cu_semaphores[i]));
+	}
+
 	// TODO: make all the path tracer resources
 
 	m_context.init_imgui(m_window, m_swapchain);
@@ -39,7 +47,8 @@ void PathTracer::create()
 void PathTracer::render()
 {
 	// Do CUDA stuff
-	test_set_image_white(m_interop.surf_obj, 800, 800);
+	float time = SDL_GetTicks() / 1000.0f;
+	test_set_image(m_interop.surf_obj, 800, 800, time, m_cu_semaphores[m_frame_index]);
 
 	const auto swapchain_index = m_context.get_swapchain_index(m_swapchain, &m_image_available_semaphores[m_frame_index].get());
 	assert(swapchain_index != -1);
@@ -160,11 +169,15 @@ void PathTracer::render()
 		{
 			.commandBuffer = cmd_buf,
 		};
-		// Wait for image to be available
-		vk::SemaphoreSubmitInfo submit_info
-		{
+		// Wait for image to be available and CUDA to finish
+		std::array<vk::SemaphoreSubmitInfo, 2> wait_infos;
+		wait_infos[0] = {
 			.semaphore = m_image_available_semaphores[m_frame_index].get(),
 			.stageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+		};
+		wait_infos[1] = {
+			.semaphore = m_cuda_semaphores[m_frame_index].semaphore,
+			.stageMask = vk::PipelineStageFlagBits2::eTransfer,
 		};
 		// Signal render finished
 		std::array<vk::SemaphoreSubmitInfo, 2> signal_infos;
@@ -183,8 +196,8 @@ void PathTracer::render()
 		};
 		vk::SubmitInfo2 info
 		{
-			.waitSemaphoreInfoCount = 1,
-			.pWaitSemaphoreInfos = &submit_info,
+			.waitSemaphoreInfoCount = 2,
+			.pWaitSemaphoreInfos = wait_infos.data(),
 			.commandBufferInfoCount = 1,
 			.pCommandBufferInfos = &cmd_buf_info,
 			.signalSemaphoreInfoCount = 2,
@@ -214,6 +227,11 @@ void PathTracer::render()
 
 void PathTracer::destroy()
 {
+	for (int i = 0; i < m_cuda_semaphores.size(); i++)
+	{
+		m_context.destroy_cuda_semaphore(&m_cuda_semaphores[i]);
+		cudaDestroyExternalSemaphore(m_cu_semaphores[i]);
+	}
 	free_interop_handles_cuda(&m_interop);
 	m_context.destroy_texture(&m_texture);
 	m_context.destroy_imgui();
