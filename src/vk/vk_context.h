@@ -5,6 +5,8 @@
 #include "vk_swapchain.h"
 #include "vk_window.h"
 
+#include "vk_texture.h"
+
 namespace pt
 {
 	class VulkanContext
@@ -25,6 +27,8 @@ namespace pt
 		bool create_command_buffer(const vk::CommandPool& pool, vk::CommandBuffer* cmd_buf) const;
 		bool create_semaphore(vk::Semaphore* semaphore, bool is_timeline, uint64_t initial_value) const;
 		vk::UniqueSemaphore create_unique_semaphore(const vk::Semaphore& semaphore) const;
+		bool create_texture(vk::Format format, vk::Extent2D dimensions, VulkanTexture* texture) const;
+		void destroy_texture(VulkanTexture* texture) const;
 
 		bool present(VulkanSwapchain* swapchain, uint32_t index, uint32_t wait_count, vk::Semaphore* wait_semaphores);
 
@@ -38,11 +42,10 @@ namespace pt
 
 		void set_barrier_image(vk::ImageMemoryBarrier* barrier, const VulkanSwapchain& swapchain, unsigned int index);
 
-		vk::Instance get_instance() const { return m_instance.instance; }
 		bool get_queue(VulkanQueue* queue) const;
 		uint32_t get_swapchain_index(const VulkanSwapchain& swapchain, vk::Semaphore* semaphore) const;
 		uint64_t get_semaphore_value(const vk::Semaphore& semaphore) const;
-		bool wait_fences(const vk::SemaphoreWaitInfo& wait_info);
+		bool wait_semaphores(const vk::SemaphoreWaitInfo& wait_info);
 
 		void init_imgui(const VulkanWindow& window, const VulkanSwapchain& swapchain);
 		void start_imgui_frame();

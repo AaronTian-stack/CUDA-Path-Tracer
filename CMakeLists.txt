@@ -1,24 +1,29 @@
 cmake_minimum_required(VERSION 3.24)
 project(cis565_path_tracer LANGUAGES CUDA CXX)
 
+if(NOT WIN32)
+    message(FATAL_ERROR "This project only supports Windows")
+endif()
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CUDA_STANDARD 17)
 set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 
 set(SOURCES
     src/main.cpp
-    src/cuda_test.cu
     src/application.cpp
+    src/path_tracer/cuda_pt.cu
     src/path_tracer/path_tracer.cpp
     src/path_tracer/buffers.cpp
     src/path_tracer/optix_denoiser.cpp
     src/vk/vk_window.cpp
     src/vk/vk_context.cpp
+    src/vk/vk_cu_interop.cpp
 )
 
 set(HEADERS
-    src/cuda_test.h
     src/application.h
+    src/path_tracer/cuda_pt.h
     src/path_tracer/path_tracer.h
     src/path_tracer/buffers.h
     src/path_tracer/optix_denoiser.h
@@ -26,6 +31,8 @@ set(HEADERS
     src/vk/vk_context.h
     src/vk/vk_queue.h
     src/vk/vk_swapchain.h
+    src/vk/vk_texture.h
+    src/vk/vk_cu_interop.h
 )
 
 file(GLOB IMGUI_SOURCES external/imgui/*.cpp)
@@ -78,6 +85,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 
 add_subdirectory(external/volk-1.4.304)
 
+# TODO: link for Linux?
 target_link_libraries(${PROJECT_NAME} PRIVATE 
     imgui
     vk_bootstrap

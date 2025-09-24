@@ -4,6 +4,9 @@
 #include <imgui.h>
 #include <imgui_internal.h>
 
+#include "cuda_pt.h"
+#include "../vk/vk_cu_interop.h"
+
 void PathTracer::init_window()
 {
 	char title[256] = "CUDA Path Tracer";
@@ -21,7 +24,8 @@ void PathTracer::init_window()
 
 void PathTracer::create()
 {
-	// TODO: create texture to render to
+	m_context.create_texture(vk::Format::eR8G8B8A8Unorm, {800, 800}, &m_texture);
+	THROW_IF_FALSE(import_vk_texture_cuda(m_texture, &m_interop));
 
 	// TODO: make all the path tracer resources
 
@@ -35,6 +39,7 @@ void PathTracer::create()
 void PathTracer::render()
 {
 	// Do CUDA stuff
+	test_set_image_white(m_interop.surf_obj, 800, 800);
 
 	const auto swapchain_index = m_context.get_swapchain_index(m_swapchain, &m_image_available_semaphores[m_frame_index].get());
 	assert(swapchain_index != -1);
@@ -46,20 +51,64 @@ void PathTracer::render()
 	m_context.free_command_buffers(&cmd_buf, 1, m_cmd_pools[get_frame_index()].get());
 	m_context.create_command_buffer(m_cmd_pools[m_frame_index].get(), &cmd_buf);
 
+	vk::ImageMemoryBarrier texture_barrier
+	{
+		.srcAccessMask = vk::AccessFlagBits::eNone,
+		.dstAccessMask = vk::AccessFlagBits::eTransferRead,
+		.oldLayout = vk::ImageLayout::eGeneral,
+		.newLayout = vk::ImageLayout::eTransferSrcOptimal,
+		.image = m_texture.image,
+		.subresourceRange = { vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1 },
+	};
+
 	vk::ImageMemoryBarrier barrier_render
 	{
+		.srcAccessMask = vk::AccessFlagBits::eNone,
+		.dstAccessMask = vk::AccessFlagBits::eTransferWrite,
 		.oldLayout = vk::ImageLayout::eUndefined,
-		.newLayout = vk::ImageLayout::eColorAttachmentOptimal,
+		.newLayout = vk::ImageLayout::eTransferDstOptimal,
 	};
 	m_context.set_barrier_image(&barrier_render, m_swapchain, swapchain_index);
 
+	std::array barriers = { texture_barrier, barrier_render };
+
 	cmd_buf.pipelineBarrier(
 		vk::PipelineStageFlagBits::eTopOfPipe,
-		vk::PipelineStageFlagBits::eAllCommands,
+		vk::PipelineStageFlagBits::eTransfer,
 		vk::DependencyFlags(),
 		0, nullptr,
 		0, nullptr,
-		1, &barrier_render
+		2, barriers.data()
+	);
+
+	vk::ImageBlit blit_region
+	{
+		.srcSubresource = { vk::ImageAspectFlagBits::eColor, 0, 0, 1 },
+	};
+	blit_region.srcOffsets[0] = vk::Offset3D{0,0,0};
+	blit_region.srcOffsets[1] = vk::Offset3D{800,800,1};
+	blit_region.dstSubresource = { vk::ImageAspectFlagBits::eColor, 0, 0, 1 };
+	blit_region.dstOffsets[0] = vk::Offset3D{0,0,0};
+	blit_region.dstOffsets[1] = vk::Offset3D{800,800,1};
+
+	cmd_buf.blitImage(m_texture.image, vk::ImageLayout::eTransferSrcOptimal, m_swapchain.images[swapchain_index], vk::ImageLayout::eTransferDstOptimal, 1, &blit_region, vk::Filter::eLinear);
+
+	vk::ImageMemoryBarrier color_barrier
+	{
+		.srcAccessMask = vk::AccessFlagBits::eTransferWrite,
+		.dstAccessMask = vk::AccessFlagBits::eColorAttachmentRead,
+		.oldLayout = vk::ImageLayout::eTransferDstOptimal,
+		.newLayout = vk::ImageLayout::eColorAttachmentOptimal,
+	};
+	m_context.set_barrier_image(&color_barrier, m_swapchain, swapchain_index);
+
+	cmd_buf.pipelineBarrier(
+		vk::PipelineStageFlagBits::eTransfer,
+		vk::PipelineStageFlagBits::eColorAttachmentOutput,
+		vk::DependencyFlags(),
+		0, nullptr,
+		0, nullptr,
+		1, &color_barrier
 	);
 
 	m_context.start_imgui_frame();
@@ -87,13 +136,15 @@ void PathTracer::render()
 
 	vk::ImageMemoryBarrier present_barrier
 	{
+		.srcAccessMask = vk::AccessFlagBits::eColorAttachmentRead,
+		.dstAccessMask = vk::AccessFlagBits::eNone,
 		.oldLayout = vk::ImageLayout::eColorAttachmentOptimal,
 		.newLayout = vk::ImageLayout::ePresentSrcKHR,
 	};
 	m_context.set_barrier_image(&present_barrier, m_swapchain, swapchain_index);
 
 	cmd_buf.pipelineBarrier(
-		vk::PipelineStageFlagBits::eAllCommands,
+		vk::PipelineStageFlagBits::eColorAttachmentOutput,
 		vk::PipelineStageFlagBits::eBottomOfPipe,
 		vk::DependencyFlags(),
 		0, nullptr,
@@ -156,13 +207,15 @@ void PathTracer::render()
 			.pSemaphores = &m_fence.get(),
 			.pValues = &current_fence_value,
 		};
-		m_context.wait_fences(wait_info);
+		m_context.wait_semaphores(wait_info);
 	}
 	m_fence_ready_val[get_frame_index()] = current_fence_value + 1;
 }
 
 void PathTracer::destroy()
 {
+	free_interop_handles_cuda(&m_interop);
+	m_context.destroy_texture(&m_texture);
 	m_context.destroy_imgui();
 }
 

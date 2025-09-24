@@ -21,9 +21,9 @@ protected:
 	pt::VulkanWindow m_window;
 	pt::VulkanSwapchain m_swapchain;
 	pt::VulkanQueue m_queue;
-	vk::UniqueCommandPool m_cmd_pools[MAX_FRAMES_IN_FLIGHT];
-	vk::UniqueSemaphore m_image_available_semaphores[MAX_FRAMES_IN_FLIGHT];
-	vk::UniqueSemaphore m_render_finished_semaphores[MAX_FRAMES_IN_FLIGHT];
+	std::array<vk::UniqueCommandPool, MAX_FRAMES_IN_FLIGHT> m_cmd_pools;
+	std::array<vk::UniqueSemaphore, MAX_FRAMES_IN_FLIGHT> m_image_available_semaphores;
+	std::array<vk::UniqueSemaphore, MAX_FRAMES_IN_FLIGHT> m_render_finished_semaphores;
 	vk::UniqueSemaphore m_fence;
 	std::array<uint64_t, MAX_FRAMES_IN_FLIGHT> m_fence_ready_val = {};
 

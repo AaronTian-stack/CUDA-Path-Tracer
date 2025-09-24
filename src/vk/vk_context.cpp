@@ -9,9 +9,15 @@
 #include <vulkan/vulkan.hpp>
 
 #ifdef _WIN32
+#define NOMINMAX
 #include <windows.h>
 #endif
+#include "vk_texture.h"
 #include "../application.h"
+
+// This file contains Windows only code for interop and needs to be changed if Linux support is added.
+// Unfortunately I don't have a Linux machine and even if I did I don't have the motivation to try it...
+// But there are already some preprocessor checks to handle some of that logic in case I revisit this project in the future.
 
 vk::detail::DispatchLoaderDynamic vk::detail::defaultDispatchLoaderDynamic;
 
@@ -33,6 +39,15 @@ bool pt::VulkanContext::create_instance(bool enable_debug_layer)
         | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT
         | VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT;
     builder.set_app_name("CUDA Path Tracer");
+
+    std::array instance_extensions = 
+    {
+        VK_KHR_EXTERNAL_MEMORY_CAPABILITIES_EXTENSION_NAME,
+        VK_KHR_EXTERNAL_SEMAPHORE_CAPABILITIES_EXTENSION_NAME,
+        VK_KHR_EXTERNAL_FENCE_CAPABILITIES_EXTENSION_NAME,
+        VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME,
+    };
+    builder.enable_extensions(instance_extensions);
 
     if (enable_debug_layer)
     {
@@ -72,12 +87,20 @@ bool pt::VulkanContext::create_device(VkSurfaceKHR surface)
         return false;
     }
 
-    std::array<const char*, 3> device_extensions = 
-    {
-        VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME,
-        VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME,
-        VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME,
-    };
+    std::vector<const char*> device_extensions;
+    device_extensions.push_back(VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME);
+    device_extensions.push_back(VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME);
+    device_extensions.push_back(VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME);
+    device_extensions.push_back(VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME);
+    device_extensions.push_back(VK_KHR_EXTERNAL_SEMAPHORE_EXTENSION_NAME);
+#ifdef _WIN64
+    device_extensions.push_back(VK_KHR_EXTERNAL_MEMORY_WIN32_EXTENSION_NAME);
+    device_extensions.push_back(VK_KHR_EXTERNAL_SEMAPHORE_WIN32_EXTENSION_NAME);
+#else
+    // TODO: Linux support?
+    device_extensions.push_back(VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME);
+    device_extensions.push_back(VK_KHR_EXTERNAL_SEMAPHORE_FD_EXTENSION_NAME);
+#endif
 
     vkb::PhysicalDeviceSelector selector{ m_instance };
 
@@ -105,7 +128,7 @@ bool pt::VulkanContext::create_device(VkSurfaceKHR surface)
 
     if (!phys_ret)
     {
-#ifdef _WIN32
+#ifdef _WIN64
         char buf[512];
         sprintf(buf, "Failed to select physical device: %s\n", phys_ret.error().message().c_str());
         OutputDebugStringA(buf);
@@ -117,7 +140,7 @@ bool pt::VulkanContext::create_device(VkSurfaceKHR surface)
     auto dev_ret = device_builder.build();
     if (!dev_ret)
     {
-#ifdef _WIN32
+#ifdef _WIN64
         char buf[512];
         sprintf(buf, "Failed to create Vulkan device: %s\n", dev_ret.error().message().c_str());
         OutputDebugStringA(buf);
@@ -146,11 +169,12 @@ bool pt::VulkanContext::create_swapchain(VulkanSwapchain* const swapchain, Vulka
         VK_COLOR_SPACE_SRGB_NONLINEAR_KHR 
     };
     swapchain_builder.set_desired_format(desired_format)
-        .set_desired_min_image_count(Application::MAX_FRAMES_IN_FLIGHT);
+        .set_desired_min_image_count(Application::MAX_FRAMES_IN_FLIGHT)
+        .set_image_usage_flags(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
     auto swap_ret = swapchain_builder.build();
     if (!swap_ret) 
     {
-#ifdef _WIN32
+#ifdef _WIN64
         char buf[512];
         sprintf(buf, "Failed to create swapchain: %s\n", swap_ret.error().message().c_str());
         OutputDebugStringA(buf);
@@ -231,6 +255,131 @@ vk::UniqueSemaphore pt::VulkanContext::create_unique_semaphore(const vk::Semapho
 	return vk::UniqueSemaphore(semaphore, m_logical_device);
 }
 
+bool pt::VulkanContext::create_texture(vk::Format format, vk::Extent2D dimensions, VulkanTexture* texture) const
+{
+    vk::ExternalMemoryImageCreateInfo externalMemoryInfo
+    {
+        .handleTypes = vk::ExternalMemoryHandleTypeFlagBits::eOpaqueWin32,
+    };
+
+    vk::ImageCreateInfo image_create_info
+    {
+			.pNext = &externalMemoryInfo,
+            .flags = vk::ImageCreateFlags(),
+            .imageType = vk::ImageType::e2D,
+            .format = format,
+            .extent = { dimensions.width, dimensions.height, 1 },
+            .mipLevels = 1,
+            .arrayLayers = 1,
+            .samples = vk::SampleCountFlagBits::e1,
+			.tiling = vk::ImageTiling::eOptimal,
+			.usage = vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled,
+            .sharingMode = vk::SharingMode::eExclusive,
+    };
+
+    texture->image = m_logical_device.createImage(image_create_info).value;
+    vk::MemoryRequirements mem_req = m_logical_device.getImageMemoryRequirements(texture->image);
+    texture->memory_size = mem_req.size;
+
+    texture->extent = image_create_info.extent;
+    texture->format = format;
+
+    VkExportMemoryAllocateInfo export_info
+    {
+        .sType = VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO,
+        .handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_BIT,
+    };
+
+    vk::PhysicalDeviceMemoryProperties mem_props = m_physical_device.getMemoryProperties();
+    uint32_t type_index = 0;
+    for (uint32_t i = 0; i < mem_props.memoryTypeCount; i++)
+    {
+        if ((mem_req.memoryTypeBits & (1 << i)) && (mem_props.memoryTypes[i].propertyFlags & vk::MemoryPropertyFlagBits::eDeviceLocal))
+        {
+            type_index = i;
+            break;
+        }
+    }
+
+    vk::MemoryAllocateInfo alloc_info
+    {
+        .pNext = &export_info,
+        .allocationSize = mem_req.size,
+        .memoryTypeIndex = type_index,
+    };
+
+    texture->memory = m_logical_device.allocateMemory(alloc_info).value;
+    const auto result = m_logical_device.bindImageMemory(texture->image, texture->memory, 0);
+    if (result != vk::Result::eSuccess)
+    {
+        return false;
+	}
+
+    // Export for CUDA interop
+	// TODO: Linux support?
+    VkMemoryGetWin32HandleInfoKHR handleInfo{};
+    handleInfo.sType = VK_STRUCTURE_TYPE_MEMORY_GET_WIN32_HANDLE_INFO_KHR;
+    handleInfo.memory = texture->memory;
+    handleInfo.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_BIT;
+    texture->win32_handle = nullptr;
+    const auto vk_get_memory_win32_handle_khr_fn = reinterpret_cast<PFN_vkGetMemoryWin32HandleKHR>(vkGetDeviceProcAddr(m_logical_device, "vkGetMemoryWin32HandleKHR"));
+    if (vk_get_memory_win32_handle_khr_fn)
+    {
+        VkResult handleResult = vk_get_memory_win32_handle_khr_fn(m_logical_device, &handleInfo, &texture->win32_handle);
+        if (handleResult != VK_SUCCESS)
+        {
+            texture->win32_handle = nullptr;
+            return false;
+        }
+    }
+    else
+    {
+        return false;
+    }
+
+    vk::ImageViewCreateInfo info
+    {
+        .image = texture->image,
+        .viewType = vk::ImageViewType::e2D,
+        .format = format,
+        .subresourceRange = 
+        {
+            .aspectMask = vk::ImageAspectFlagBits::eColor,
+            .baseMipLevel = 0,
+            .levelCount = 1,
+            .baseArrayLayer = 0,
+            .layerCount = 1
+		}
+    };
+
+    const auto view_result = m_logical_device.createImageView(&info, nullptr, &texture->image_view);
+    if (view_result != vk::Result::eSuccess)
+    {
+        return false;
+    }
+
+	return true;
+}
+
+void pt::VulkanContext::destroy_texture(VulkanTexture* texture) const
+{
+    if (texture->image_view)
+    {
+        m_logical_device.destroyImageView(texture->image_view);
+        texture->image_view = VK_NULL_HANDLE;
+    }
+    if (texture->image)
+    {
+        m_logical_device.destroyImage(texture->image);
+        texture->image = VK_NULL_HANDLE;
+    }
+    if (texture->memory)
+    {
+        m_logical_device.freeMemory(texture->memory);
+        texture->memory = VK_NULL_HANDLE;
+    }
+}
+
 bool pt::VulkanContext::present(VulkanSwapchain* swapchain, uint32_t index, uint32_t wait_count, vk::Semaphore* wait_semaphores)
 {
     assert(m_swapchain_queue);
@@ -271,16 +420,14 @@ void pt::VulkanContext::start_render_pass(vk::CommandBuffer* cmd_buf, VulkanSwap
 	{
 		.imageView = swapchain->image_views[swapchain_index],
         .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-        .loadOp = vk::AttachmentLoadOp::eClear,
-        .clearValue = vk::ClearValue{ vk::ClearColorValue{ std::array{0.0f, 0.0f, 0.0f, 1.0f} } },
+        .loadOp = vk::AttachmentLoadOp::eLoad,
 	};
 
     auto render_area = vk::Rect2D
 	{
-		vk::Offset2D{},
-		swapchain->get_extent()
+		.offset = vk::Offset2D{},
+		.extent = swapchain->get_extent()
 	};
-	const auto format = swapchain->get_format();
     vk::RenderingInfo render_info
 	{
         .renderArea = {render_area},
@@ -316,7 +463,7 @@ bool pt::VulkanContext::get_queue(VulkanQueue* queue) const
     auto queue_ret = m_device.get_queue(vkb::QueueType::graphics);
     if (!queue_ret) 
     {
-#ifdef _WIN32
+#ifdef _WIN64
         char buf[512];
         sprintf(buf, "Failed to get graphics queue: %s\n", queue_ret.error().message().c_str());
         OutputDebugStringA(buf);
@@ -340,11 +487,6 @@ uint32_t pt::VulkanContext::get_swapchain_index(const VulkanSwapchain& swapchain
         *semaphore, VK_NULL_HANDLE, &image_index);
     if (result != VK_SUCCESS)
     {
-#ifdef _WIN32
-        char buf[256];
-        sprintf(buf, "Failed to acquire next image: %d\n", result);
-        OutputDebugStringA(buf);
-#endif
         return -1;
     }
     return image_index;
@@ -356,26 +498,16 @@ uint64_t pt::VulkanContext::get_semaphore_value(const vk::Semaphore& semaphore) 
 	const auto result = m_logical_device.getSemaphoreCounterValue(semaphore, &value);
     if (result != vk::Result::eSuccess)
     {
-#ifdef _WIN32
-        char buf[256];
-        sprintf(buf, "Failed to get semaphore value: %d\n", result);
-        OutputDebugStringA(buf);
-#endif
 		return 0;
 	}
 	return value;
 }
 
-bool pt::VulkanContext::wait_fences(const vk::SemaphoreWaitInfo& wait_info)
+bool pt::VulkanContext::wait_semaphores(const vk::SemaphoreWaitInfo& wait_info)
 {
 	const auto result = m_logical_device.waitSemaphores(wait_info, UINT64_MAX);
 	if (result != vk::Result::eSuccess)
     {
-#ifdef _WIN32
-        char buf[256];
-        sprintf(buf, "Failed to wait for semaphores: %d\n", result);
-        OutputDebugStringA(buf);
-#endif
 		return false;
 	}
     return true;
