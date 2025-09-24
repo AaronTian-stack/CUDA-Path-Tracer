@@ -9,7 +9,9 @@ set(SOURCES
     src/main.cpp
     src/cuda_test.cu
     src/application.cpp
-    src/pathtracer.cpp
+    src/path_tracer/path_tracer.cpp
+    src/path_tracer/buffers.cpp
+    src/path_tracer/optix_denoiser.cpp
     src/vk/vk_window.cpp
     src/vk/vk_context.cpp
 )
@@ -17,22 +19,35 @@ set(SOURCES
 set(HEADERS
     src/cuda_test.h
     src/application.h
-    src/pathtracer.h
+    src/path_tracer/path_tracer.h
+    src/path_tracer/buffers.h
+    src/path_tracer/optix_denoiser.h
     src/vk/vk_window.h
     src/vk/vk_context.h
+    src/vk/vk_queue.h
+    src/vk/vk_swapchain.h
 )
 
 file(GLOB IMGUI_SOURCES external/imgui/*.cpp)
 
 # Build ImGUI as a static library so that it doesn't show up in the path tracer project tree
 add_library(imgui STATIC ${IMGUI_SOURCES})
-target_include_directories(imgui PRIVATE external/imgui external/volk-1.4.304 external/vulkan)
-target_compile_definitions(imgui PRIVATE IMGUI_IMPL_VULKAN_USE_VOLK VK_USE_PLATFORM_WIN32_KHR)
+target_include_directories(imgui PRIVATE 
+    external/imgui 
+    external/volk-1.4.304 
+    external/vulkan external/SDL-3.2.22/include)
+target_compile_definitions(imgui PRIVATE 
+    IMGUI_IMPL_VULKAN_USE_VOLK 
+    IMGUI_IMPL_VULKAN_HAS_DYNAMIC_RENDERING
+    VK_USE_PLATFORM_WIN32_KHR 
+    VK_NO_PROTOTYPES 
+    VULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1)
 
 # Similarly build vk-bootstrap as a static library
 file(GLOB VK_BOOTSTRAP_SOURCES external/vk-bootstrap/*.cpp)
 add_library(vk_bootstrap STATIC ${VK_BOOTSTRAP_SOURCES})
 target_include_directories(vk_bootstrap PRIVATE external/vk-bootstrap external/vulkan)
+target_compile_definitions(vk_bootstrap PRIVATE VULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1)
 
 add_executable(${PROJECT_NAME} ${SOURCES} ${HEADERS})
 
@@ -43,7 +58,13 @@ source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${ALL_PROJECT_FILES})
 set_target_properties(${PROJECT_NAME} PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
 set_target_properties(${PROJECT_NAME} PROPERTIES CUDA_ARCHITECTURES native)
 
-target_compile_definitions(${PROJECT_NAME} PRIVATE IMGUI_IMPL_VULKAN_USE_VOLK VK_USE_PLATFORM_WIN32_KHR)
+target_compile_definitions(${PROJECT_NAME} PRIVATE 
+    IMGUI_IMPL_VULKAN_USE_VOLK 
+    VK_USE_PLATFORM_WIN32_KHR 
+    VULKAN_HPP_NO_EXCEPTIONS
+    VULKAN_HPP_NO_CONSTRUCTORS
+    VK_NO_PROTOTYPES
+    VULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1)
 
 target_include_directories(${PROJECT_NAME} PRIVATE 
     external/imgui 
@@ -62,7 +83,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     vk_bootstrap
     ${CMAKE_CURRENT_SOURCE_DIR}/external/vulkan/vulkan/bin/vulkan-1.lib 
     ${CMAKE_CURRENT_SOURCE_DIR}/external/SDL-3.2.22/lib/SDL3.lib 
-    volk_headers)
+    volk)
 
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different

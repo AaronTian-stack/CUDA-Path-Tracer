@@ -1,24 +1,15 @@
 #include "cuda_test.h"
 #include <glm/glm.hpp>
 
-#define VOLK_IMPLEMENTATION
-#include <volk.h>
-
 #define TINYGLTF_IMPLEMENTATION
 #define STB_IMAGE_IMPLEMENTATION
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "application.h"
-#include "pathtracer.h"
 #include "tiny_gltf.h"
+#include "path_tracer/path_tracer.h"
 
 int main()
 {
-    VkResult result = volkInitialize();
-    if (result != VK_SUCCESS) 
-    {
-        fprintf(stderr, "Failed to initialize volk: %d\n", result);
-        return EXIT_FAILURE;
-    }
     kernelWrapper();
     printf("host\n");
     glm::vec3 vec(1.0f, 2.0f, 3.0f);

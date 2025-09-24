@@ -1,6 +1,6 @@
 ﻿#include "vk_window.h"
 
-#include <SDL3/SDL_vulkan.h>
+#include "vk_context.h"
 
 bool pt::VulkanWindow::create(const WindowSettings& settings)
 {
@@ -40,5 +40,7 @@ bool pt::VulkanWindow::create(const WindowSettings& settings)
 
 bool pt::VulkanWindow::create_surface(const VulkanContext& device)
 {
-	return SDL_Vulkan_CreateSurface(m_window, device.m_instance, nullptr, &m_surface);
+	const bool status = SDL_Vulkan_CreateSurface(m_window, device.m_instance, nullptr, &m_surface);
+	device.m_surface = m_surface;
+	return status;
 }
