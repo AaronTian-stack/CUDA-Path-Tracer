@@ -1,6 +1,5 @@
 ﻿#include "optix_denoiser.h"
 
-#include <cassert>
 #include <cstdio>
 #include <cuda_runtime_api.h>
 #include <optix_function_table_definition.h> // Do this only in one cpp file
@@ -15,7 +14,7 @@ bool OptiXDenoiser::init(unsigned int width, unsigned int height)
     OptixResult result = optixDeviceContextCreate(nullptr, nullptr, &m_ctx);
     if (result != OPTIX_SUCCESS)
     {
-#ifdef _WIN32
+#ifdef _WIN64
         char buf[256];
         sprintf(buf, "OptiX device context creation failed: %d\n", result);
         OutputDebugStringA(buf);
@@ -51,16 +50,11 @@ bool OptiXDenoiser::init(unsigned int width, unsigned int height)
 	m_state = reinterpret_cast<CUdeviceptr>(state);
 	m_scratch = reinterpret_cast<CUdeviceptr>(scratch);
 
-	m_width = width;
-	m_height = height;
-
     return true;
 }
 
-bool OptiXDenoiser::denoise(const OptixImage2D& in, const OptixImage2D& out, const OptixImage2D& albedo, const OptixImage2D& normal, unsigned int width, unsigned int height)
+bool OptiXDenoiser::denoise(const OptixImage2D& in, const OptixImage2D& out, const OptixImage2D& albedo, const OptixImage2D& normal) const
 {
-	assert(width == m_width && height == m_height);
-
     OptixDenoiserGuideLayer gl{};
     gl.albedo = albedo;
     gl.normal = normal;
@@ -76,7 +70,7 @@ bool OptiXDenoiser::denoise(const OptixImage2D& in, const OptixImage2D& out, con
 
     if (denoise_result != OPTIX_SUCCESS)
     {
-#ifdef _WIN32
+#ifdef _WIN64
         char buf[256];
         sprintf(buf, "OptiX denoiser invoke failed: %d\n", denoise_result);
         OutputDebugStringA(buf);

@@ -5,9 +5,137 @@
 #include <imgui_internal.h>
 #include <cuda_runtime.h>
 #include <SDL3/SDL.h>
+#include <glm/gtc/constants.hpp>
 
+#include "bsdf.h"
 #include "cuda_pt.h"
+#include "util.h"
 #include "../vk/vk_cu_interop.h"
+
+void Images::init(size_t num_pixels)
+{
+	cudaMalloc(&image, num_pixels * sizeof(glm::vec3));
+	cudaMemset(image, 0, num_pixels * sizeof(glm::vec3));
+
+	cudaMalloc(&accumulated_albedo, num_pixels * sizeof(glm::vec3));
+	cudaMemset(accumulated_albedo, 0, num_pixels * sizeof(glm::vec3));
+
+	cudaMalloc(&accumulated_normal, num_pixels * sizeof(glm::vec3));
+	cudaMemset(accumulated_normal, 0, num_pixels * sizeof(glm::vec3));
+
+	cudaMalloc(&albedo, num_pixels * sizeof(glm::vec3));
+	cudaMalloc(&normal, num_pixels * sizeof(glm::vec3));
+	cudaMalloc(&in_denoise, num_pixels * sizeof(glm::vec3));
+	cudaMalloc(&out_denoise, num_pixels * sizeof(glm::vec3));
+}
+
+void Images::clear(size_t num_pixels)
+{
+	cudaMemset(image, 0, num_pixels * sizeof(glm::vec3));
+	cudaMemset(accumulated_albedo, 0, num_pixels * sizeof(glm::vec3));
+	cudaMemset(accumulated_normal, 0, num_pixels * sizeof(glm::vec3));
+	cudaMemset(albedo, 0, num_pixels * sizeof(glm::vec3));
+	cudaMemset(normal, 0, num_pixels * sizeof(glm::vec3));
+}
+
+Images::~Images()
+{
+	cudaFree(image);
+	cudaFree(accumulated_albedo);
+	cudaFree(accumulated_normal);
+	cudaFree(albedo);
+	cudaFree(normal);
+	cudaFree(in_denoise);
+	cudaFree(out_denoise);
+}
+
+void PathTracer::reset_scene()
+{
+	const auto pixel_count = m_scene.camera.resolution.x * m_scene.camera.resolution.y;
+	cudaMemset(m_intersections, 0, pixel_count * sizeof(ShadeableIntersection));
+	cudaMemset(m_images.image, 0, pixel_count * sizeof(glm::vec3));
+	cudaMemset(m_images.accumulated_albedo, 0, pixel_count * sizeof(glm::vec3));
+	cudaMemset(m_images.accumulated_normal, 0, pixel_count * sizeof(glm::vec3));
+	cudaMemset(m_images.albedo, 0, pixel_count * sizeof(glm::vec3));
+	cudaMemset(m_images.normal, 0, pixel_count * sizeof(glm::vec3));
+}
+
+void PathTracer::pathtrace(cudaSurfaceObject_t surf, const PathTracerSettings& settings, const OptiXDenoiser& denoiser,
+                           int interval_to_denoise, int iteration)
+{
+	// Generate primary rays
+
+	const auto& camera = m_scene.camera;
+
+	const auto res_x = camera.resolution.x;
+	const auto res_y = camera.resolution.y;
+	const auto pixel_count = res_x * res_y;
+
+	const dim3 block_size_2D(16, 16);
+	const dim3 blocks_per_grid_2D(
+	    (res_x + block_size_2D.x - 1) / block_size_2D.x,
+	    (res_y + block_size_2D.y - 1) / block_size_2D.y);
+
+	const int block_size_1D = 128;
+
+	generate_ray_from_camera(blocks_per_grid_2D, block_size_2D, camera, iteration, m_scene_settings.trace_depth, m_paths);
+
+	const dim3 num_blocks_pixels = divup(pixel_count, block_size_1D);
+
+	int depth = 0;
+	auto num_paths = pixel_count;
+
+	while (num_paths != 0)
+	{
+		cudaMemset(m_intersections, 0, pixel_count * sizeof(ShadeableIntersection));
+
+		compute_intersections(block_size_1D, depth, num_paths, m_paths, m_geoms, static_cast<int>(m_scene.geoms.size()), m_intersections);
+		
+		if (depth++ == 0)
+		{
+			accumulate_albedo_normal(num_blocks_pixels, block_size_1D,
+				pixel_count, m_intersections, m_materials, m_images.accumulated_albedo, m_images.accumulated_normal);
+		}
+
+		if (settings.sort_rays)
+		{
+			sort_paths_by_material(m_intersections, m_paths, num_paths);
+		}
+
+		shade_paths(block_size_1D, iteration, num_paths, m_intersections, m_materials, m_paths);
+
+		num_paths = filter_paths_with_bounces(m_paths, num_paths);
+	}
+	m_settings.traced_depth = depth;
+
+	// Assemble this iteration and apply it to the image
+	final_gather(block_size_1D, pixel_count, m_images.image, m_paths);
+
+	normalize_albedo_normal(blocks_per_grid_2D, block_size_2D,
+		camera.resolution, iteration, m_images.accumulated_albedo, m_images.accumulated_normal, m_images.albedo, m_images.normal);
+
+	if (iteration % interval_to_denoise == 0)
+	{
+		//average_image_for_denoise(blocks_per_grid_2D, block_size_2D, m_images.image, camera.resolution, iteration, m_images.in_denoise);
+		//denoiser.denoise()
+	}
+
+	switch (settings.display_mode)
+	{
+	case PROGRESSIVE:
+		set_image(blocks_per_grid_2D, block_size_2D, m_interop.surf_obj, m_images.image, res_x, res_y, 1.0f / iteration);
+		break;
+	case ALBEDO:
+		set_image(blocks_per_grid_2D, block_size_2D, m_interop.surf_obj, m_images.albedo, res_x, res_y, 1.0f);
+		break;
+	case NORMAL:
+		set_image(blocks_per_grid_2D, block_size_2D, m_interop.surf_obj, m_images.normal, res_x, res_y, 1.0f);
+		break;
+	case DENOISED:
+		set_image(blocks_per_grid_2D, block_size_2D, m_interop.surf_obj, m_images.out_denoise, res_x, res_y, 1.0f);
+		break;
+	}
+}
 
 void PathTracer::init_window()
 {
@@ -35,7 +163,22 @@ void PathTracer::create()
 		THROW_IF_FALSE(import_vk_semaphore_cuda(m_cuda_semaphores[i], &m_cu_semaphores[i]));
 	}
 
-	// TODO: make all the path tracer resources
+	// Make all the path tracer resources
+	{
+		const auto pixel_count = m_scene.camera.resolution.x * m_scene.camera.resolution.y;
+		m_images.init(pixel_count);
+
+		cudaMalloc(&m_paths, pixel_count * sizeof(PathSegment));
+
+		cudaMalloc(&m_geoms, m_scene.geoms.size() * sizeof(Geom));
+		cudaMemcpy(m_geoms, m_scene.geoms.data(), m_scene.geoms.size() * sizeof(Geom), cudaMemcpyHostToDevice);
+
+		cudaMalloc(&m_materials, m_scene.materials.size() * sizeof(Material));
+		cudaMemcpy(m_materials, m_scene.materials.data(), m_scene.materials.size() * sizeof(Material), cudaMemcpyHostToDevice);
+
+		cudaMalloc(&m_intersections, pixel_count * sizeof(ShadeableIntersection));
+		cudaMemset(m_intersections, 0, pixel_count * sizeof(ShadeableIntersection));
+	}
 
 	m_context.init_imgui(m_window, m_swapchain);
 
@@ -46,9 +189,32 @@ void PathTracer::create()
 
 void PathTracer::render()
 {
+	static int iteration = 0;
+
+	// TODO: input
+	// On input, set iteration = 0
+
+	if (iteration == 0)
+	{
+		reset_scene();
+	}
+
 	// Do CUDA stuff
-	float time = SDL_GetTicks() / 1000.0f;
-	test_set_image(m_interop.surf_obj, 800, 800, time, m_cu_semaphores[m_frame_index]);
+	{
+		//float time = SDL_GetTicks() / 1000.0f;
+		//test_set_image(m_interop.surf_obj, 800, 800, time);
+		pathtrace(m_interop.surf_obj, m_settings, m_denoiser, denoise_interval, iteration++);
+		cudaExternalSemaphoreSignalParams params{};
+		cudaSignalExternalSemaphoresAsync(&m_cu_semaphores[m_frame_index], &params, 1, 0);
+
+		// TODO
+		if (iteration >= 1)
+		{
+			// Save image
+
+			exit(EXIT_SUCCESS);
+		}
+	}
 
 	const auto swapchain_index = m_context.get_swapchain_index(m_swapchain, &m_image_available_semaphores[m_frame_index].get());
 	assert(swapchain_index != -1);
@@ -100,7 +266,7 @@ void PathTracer::render()
 	blit_region.dstOffsets[0] = vk::Offset3D{0,0,0};
 	blit_region.dstOffsets[1] = vk::Offset3D{800,800,1};
 
-	cmd_buf.blitImage(m_texture.image, vk::ImageLayout::eTransferSrcOptimal, m_swapchain.images[swapchain_index], vk::ImageLayout::eTransferDstOptimal, 1, &blit_region, vk::Filter::eLinear);
+	cmd_buf.blitImage(m_texture.image, vk::ImageLayout::eTransferSrcOptimal, m_swapchain.images[swapchain_index], vk::ImageLayout::eTransferDstOptimal, 1, &blit_region, vk::Filter::eNearest);
 
 	vk::ImageMemoryBarrier color_barrier
 	{
@@ -139,7 +305,6 @@ void PathTracer::render()
 	ImGui::End();
 
 	m_context.start_render_pass(&cmd_buf, &m_swapchain, swapchain_index);
-	// TODO: blit texture
 	m_context.render_imgui_draw_data(&cmd_buf);
 	m_context.end_render_pass(&cmd_buf);
 
@@ -227,6 +392,11 @@ void PathTracer::render()
 
 void PathTracer::destroy()
 {
+	cudaFree(m_paths);
+	cudaFree(m_intersections);
+	cudaFree(m_geoms);
+	cudaFree(m_materials);
+
 	for (int i = 0; i < m_cuda_semaphores.size(); i++)
 	{
 		m_context.destroy_cuda_semaphore(&m_cuda_semaphores[i]);
@@ -235,6 +405,13 @@ void PathTracer::destroy()
 	free_interop_handles_cuda(&m_interop);
 	m_context.destroy_texture(&m_texture);
 	m_context.destroy_imgui();
+}
+
+bool PathTracer::init_scene(const char* file_name)
+{
+	const bool result = m_scene.load(file_name, &m_scene_settings);
+	assert(m_scene_settings.iterations % denoise_interval == 0);
+	return result;
 }
 
 PathTracer::~PathTracer()

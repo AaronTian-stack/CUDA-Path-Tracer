@@ -12,10 +12,14 @@ set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 set(SOURCES
     src/main.cpp
     src/application.cpp
+    src/path_tracer/camera.cpp
     src/path_tracer/cuda_pt.cu
+    src/path_tracer/intersection.cu
+    src/path_tracer/bsdf.cu
+    src/path_tracer/ggx.cu
     src/path_tracer/path_tracer.cpp
-    src/path_tracer/buffers.cpp
     src/path_tracer/optix_denoiser.cpp
+    src/path_tracer/scene.cpp
     src/vk/vk_window.cpp
     src/vk/vk_context.cpp
     src/vk/vk_cu_interop.cpp
@@ -23,10 +27,16 @@ set(SOURCES
 
 set(HEADERS
     src/application.h
+    src/path_tracer/camera.h
     src/path_tracer/cuda_pt.h
+    src/path_tracer/intersection.h
+    src/path_tracer/bsdf.h
+    src/path_tracer/ggx.h
     src/path_tracer/path_tracer.h
-    src/path_tracer/buffers.h
     src/path_tracer/optix_denoiser.h
+    src/path_tracer/scene.h
+    src/path_tracer/scene_structs.h
+    src/path_tracer/util.h
     src/vk/vk_window.h
     src/vk/vk_context.h
     src/vk/vk_queue.h
@@ -58,12 +68,25 @@ target_compile_definitions(vk_bootstrap PRIVATE VULKAN_HPP_DISPATCH_LOADER_DYNAM
 
 add_executable(${PROJECT_NAME} ${SOURCES} ${HEADERS})
 
+set(scene_files
+    scenes/cornell.json
+    scenes/sphere.json
+)
+target_sources(${PROJECT_NAME} PRIVATE ${scene_files})
+
 # Don't include third party libraries in the VS project tree
 set(ALL_PROJECT_FILES ${SOURCES} ${HEADERS})
+list(APPEND ALL_PROJECT_FILES ${scene_files})
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${ALL_PROJECT_FILES})
+
+source_group("scenes" FILES ${scene_files})
+
+set_source_files_properties(${scene_files} PROPERTIES HEADER_FILE_ONLY TRUE)
 
 set_target_properties(${PROJECT_NAME} PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
 set_target_properties(${PROJECT_NAME} PROPERTIES CUDA_ARCHITECTURES native)
+
+target_compile_options(${PROJECT_NAME} PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:--extended-lambda>)
 
 target_compile_definitions(${PROJECT_NAME} PRIVATE 
     IMGUI_IMPL_VULKAN_USE_VOLK 
@@ -81,9 +104,12 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     external/SDL-3.2.22/include
     external/tinygltf-2.9.6
     external/vk-bootstrap
-    external/Optix-9.0.0/include)
+    external/Optix-9.0.0/include
+    ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES})
 
 add_subdirectory(external/volk-1.4.304)
+
+target_include_directories(volk PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/external/vulkan)
 
 # TODO: link for Linux?
 target_link_libraries(${PROJECT_NAME} PRIVATE 

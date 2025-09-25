@@ -62,7 +62,10 @@ void Application::run(bool enable_debug_layer)
 			{
 				m_quit = true;
 			}
-			// TODO: input
+			if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_ESCAPE)
+			{
+				m_quit = true;
+			}
 			if (ImGui::GetCurrentContext())
 				ImGui_ImplSDL3_ProcessEvent(&event);
 		}

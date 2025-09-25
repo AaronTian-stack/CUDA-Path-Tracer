@@ -17,7 +17,7 @@
 
 // This file contains Windows only code for interop and needs to be changed if Linux support is added.
 // Unfortunately I don't have a Linux machine and even if I did I don't have the motivation to try it...
-// But there are already some preprocessor checks to handle some of that logic in case I revisit this project in the future.
+// But there are already some preprocessor checks throughout the project to handle some of that logic in case I revisit this in the future.
 
 vk::detail::DispatchLoaderDynamic vk::detail::defaultDispatchLoaderDynamic;
 
@@ -579,8 +579,8 @@ void pt::VulkanContext::init_imgui(const VulkanWindow& window, const VulkanSwapc
         .QueueFamily = m_swapchain_queue->index,
         .Queue = m_swapchain_queue->queue,
         .DescriptorPoolSize = 128,
-        .MinImageCount = 2,
-        .ImageCount = 2,
+        .MinImageCount = Application::MAX_FRAMES_IN_FLIGHT,
+        .ImageCount = Application::MAX_FRAMES_IN_FLIGHT,
         .MSAASamples = VK_SAMPLE_COUNT_1_BIT,
         .UseDynamicRendering = true,
         .PipelineRenderingCreateInfo = pipeline,
