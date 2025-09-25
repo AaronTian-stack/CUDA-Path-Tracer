@@ -37,29 +37,28 @@ void test_set_image(cudaSurfaceObject_t surf_obj, size_t width, size_t height, f
     set_image_uv<<<grid, block>>>(surf_obj, width, height, time);
 }
 
-__global__ void generate_ray_from_camera(Camera cam, int iter, int traceDepth, PathSegment* pathSegments)
+__global__ void generate_ray_from_camera(Camera cam, int iter, int traceDepth, PathSegments path_segments)
 {
     int x = (blockIdx.x * blockDim.x) + threadIdx.x;
     int y = (blockIdx.y * blockDim.y) + threadIdx.y;
 
     if (x < cam.resolution.x && y < cam.resolution.y) {
         int index = x + (y * cam.resolution.x);
-        PathSegment& segment = pathSegments[index];
 
-        segment.ray.origin = cam.position;
-        segment.color = glm::vec3(1.0f, 1.0f, 1.0f);
+        path_segments.origins[index] = cam.position;
+        path_segments.colors[index] = glm::vec3(1.0f, 1.0f, 1.0f);
 
         thrust::default_random_engine rng = make_seeded_random_engine(iter, 0, traceDepth);
         thrust::uniform_real_distribution<float> u01(0, 1);
 
         // Antialiasing by jittering the ray
-        segment.ray.direction = glm::normalize(cam.view
+        path_segments.directions[index] = glm::normalize(cam.view
             - cam.right * cam.pixel_length.x * (static_cast<float>(x) - static_cast<float>(cam.resolution.x) * 0.5f + u01(rng))
             - cam.up * cam.pixel_length.y * (static_cast<float>(y) - static_cast<float>(cam.resolution.y) * 0.5f + u01(rng))
         );
 
-        segment.pixel_index = index;
-        segment.remaining_bounces = traceDepth;
+        path_segments.pixel_indices[index] = index;
+        path_segments.remaining_bounces[index] = traceDepth;
     }
 }
 
@@ -106,7 +105,7 @@ void set_image(const dim3& grid, const dim3& block, cudaSurfaceObject_t surf_obj
 }
 
 void generate_ray_from_camera(const dim3& grid, const dim3& block, const Camera& cam, int iter, int trace_depth,
-                              PathSegment* path_segments)
+                              PathSegments path_segments)
 {
 	generate_ray_from_camera<<<grid, block>>>(cam, iter, trace_depth, path_segments);
 }
@@ -118,24 +117,23 @@ void accumulate_albedo_normal(const dim3& grid, const int block_size_1D, int num
 	accumulate_albedo_normal<<<grid, block_size_1D>>>(num_paths, intersections, materials, accumulated_albedo, accumulated_normal);
 }
 
-void sort_paths_by_material(ShadeableIntersection* intersections, PathSegment* paths, int num_paths)
+void sort_paths_by_material(ShadeableIntersection* intersections, PathSegments path_segments, int num_paths)
 {
-    thrust::sort_by_key(thrust::device,
-        intersections,
-        intersections + num_paths,
-        paths,
+    auto keys = intersections;
+    auto values = thrust::make_zip_iterator(thrust::make_tuple(path_segments.origins, path_segments.directions, path_segments.colors, path_segments.pixel_indices, path_segments.remaining_bounces));
+    thrust::sort_by_key(thrust::device, keys, keys + num_paths, values,
         [] __device__(const ShadeableIntersection& a, const ShadeableIntersection& b) {
             return a.material_id < b.material_id;
         });
 }
 
-__global__ void compute_intersections(int depth, int num_paths, PathSegment* paths, Geom* geoms, int num_geoms, ShadeableIntersection* intersections)
+__global__ void compute_intersections(int depth, int num_paths, PathSegments path_segments, Geom* geoms, int num_geoms, ShadeableIntersection* intersections)
 {
     int path_index = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (path_index < num_paths)
     {
-        PathSegment pathSegment = paths[path_index];
+        Ray ray = {path_segments.origins[path_index], path_segments.directions[path_index]};
 
         float t;
         glm::vec3 normal;
@@ -154,11 +152,11 @@ __global__ void compute_intersections(int depth, int num_paths, PathSegment* pat
 
             if (geom.type == CUBE)
             {
-                t = box_intersection_test(geom, pathSegment.ray, tmp_intersect, tmp_normal, outside);
+                t = box_intersection_test(geom, ray, tmp_intersect, tmp_normal, outside);
             }
             else if (geom.type == SPHERE)
             {
-                t = sphere_intersection_test(geom, pathSegment.ray, tmp_intersect, tmp_normal, outside);
+                t = sphere_intersection_test(geom, ray, tmp_intersect, tmp_normal, outside);
             }
             // TODO: add more intersection tests here... triangle? metaball? CSG?
 
@@ -186,26 +184,25 @@ __global__ void compute_intersections(int depth, int num_paths, PathSegment* pat
     }
 }
 
-void compute_intersections(int threads, int depth, int num_paths, PathSegment* paths, Geom* geoms, int num_geoms, ShadeableIntersection* intersections)
+void compute_intersections(int threads, int depth, int num_paths, PathSegments path_segments, Geom* geoms, int num_geoms, ShadeableIntersection* intersections)
 {
     dim3 block(threads);
     dim3 grid(divup(num_paths, block.x));
-    compute_intersections<<<grid, block>>>(depth, num_paths, paths, geoms, num_geoms, intersections);
+    compute_intersections<<<grid, block>>>(depth, num_paths, path_segments, geoms, num_geoms, intersections);
 }
 
-__global__ void final_gather_kernel(int initial_num_paths, glm::vec3* image, PathSegment* paths)
+__global__ void final_gather_kernel(int initial_num_paths, glm::vec3* image, PathSegments path_segments)
 {
     int index = blockIdx.x * blockDim.x + threadIdx.x;
     if (index >= initial_num_paths) return;
-    PathSegment iterationPath = paths[index];
-    image[iterationPath.pixel_index] += iterationPath.color;
+    image[path_segments.pixel_indices[index]] += path_segments.colors[index];
 }
 
-void final_gather(int threads, int initial_num_paths, glm::vec3* image, PathSegment* paths)
+void final_gather(int threads, int initial_num_paths, glm::vec3* image, PathSegments path_segments)
 {
     dim3 block(threads);
     dim3 grid(divup(initial_num_paths, block.x));
-    final_gather_kernel<<<grid, block>>>(initial_num_paths, image, paths);
+    final_gather_kernel<<<grid, block>>>(initial_num_paths, image, path_segments);
 }
 
 __global__ void normalize_albedo_normal(glm::vec2 resolution, int iter, glm::vec3* accumulated_albedo, glm::vec3* accumulated_normal, glm::vec3* albedo_image, glm::vec3* normal_image)
@@ -237,19 +234,20 @@ void average_image_for_denoise(const dim3& grid, const dim3& block, glm::vec3* i
     average_image_for_denoise<<<grid, block>>>(image, resolution, iter, in_denoise);
 }
 
-void shade_paths(int threads, int iteration, int num_paths, ShadeableIntersection* intersections, Material* materials, PathSegment* paths)
+void shade_paths(int threads, int iteration, int num_paths, ShadeableIntersection* intersections, Material* materials, PathSegments path_segments)
 {
     dim3 block(128);
     dim3 grid(divup(num_paths, block.x));
-    shade<<<grid, block>>>(iteration, num_paths, intersections, materials, paths);
+    shade<<<grid, block>>>(iteration, num_paths, intersections, materials, path_segments);
 }
 
-int filter_paths_with_bounces(PathSegment* paths, int num_paths)
+int filter_paths_with_bounces(PathSegments path_segments, int num_paths)
 {
-    auto new_end = thrust::partition(thrust::device, paths, paths + num_paths,
-        [] __device__(const PathSegment & p)
-        {
-            return p.remaining_bounces > 0;
+    auto zip_begin = thrust::make_zip_iterator(thrust::make_tuple(path_segments.origins, path_segments.directions, path_segments.colors, path_segments.pixel_indices, path_segments.remaining_bounces));
+    auto zip_end = zip_begin + num_paths;
+    auto new_end = thrust::partition(thrust::device, zip_begin, zip_end,
+        [] __device__(const thrust::tuple<glm::vec3, glm::vec3, glm::vec3, int, int>& t) {
+            return thrust::get<4>(t) > 0;
         });
-    return static_cast<int>(new_end - paths);
+    return static_cast<int>(new_end - zip_begin);
 }

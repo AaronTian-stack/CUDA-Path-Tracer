@@ -116,8 +116,31 @@ void PathTracer::pathtrace(cudaSurfaceObject_t surf, const PathTracerSettings& s
 
 	if (iteration % interval_to_denoise == 0)
 	{
-		//average_image_for_denoise(blocks_per_grid_2D, block_size_2D, m_images.image, camera.resolution, iteration, m_images.in_denoise);
-		//denoiser.denoise()
+		average_image_for_denoise(blocks_per_grid_2D, block_size_2D, m_images.image, camera.resolution, iteration, m_images.in_denoise);
+
+		OptixImage2D in;
+		in.data = reinterpret_cast<CUdeviceptr>(m_images.in_denoise);
+		in.width = camera.resolution.x;
+		in.height = camera.resolution.y;
+		in.rowStrideInBytes = sizeof(glm::vec3) * camera.resolution.x;
+		in.pixelStrideInBytes = sizeof(glm::vec3);
+		in.format = OPTIX_PIXEL_FORMAT_FLOAT3;
+
+		OptixImage2D out = in;
+		out.data = reinterpret_cast<CUdeviceptr>(m_images.out_denoise);
+
+		OptixImage2D albedo;
+		albedo.data = reinterpret_cast<CUdeviceptr>(m_images.albedo);
+		albedo.width = camera.resolution.x;
+		albedo.height = camera.resolution.y;
+		albedo.rowStrideInBytes = sizeof(glm::vec3) * camera.resolution.x;
+		albedo.pixelStrideInBytes = sizeof(glm::vec3);
+		albedo.format = OPTIX_PIXEL_FORMAT_FLOAT3;
+
+		OptixImage2D normal = albedo;
+		normal.data = reinterpret_cast<CUdeviceptr>(m_images.normal);
+
+		THROW_IF_FALSE(denoiser.denoise(in, out, albedo, normal));
 	}
 
 	switch (settings.display_mode)
@@ -168,7 +191,11 @@ void PathTracer::create()
 		const auto pixel_count = m_scene.camera.resolution.x * m_scene.camera.resolution.y;
 		m_images.init(pixel_count);
 
-		cudaMalloc(&m_paths, pixel_count * sizeof(PathSegment));
+		cudaMalloc(&m_paths.origins, pixel_count * sizeof(glm::vec3));
+		cudaMalloc(&m_paths.directions, pixel_count * sizeof(glm::vec3));
+		cudaMalloc(&m_paths.colors, pixel_count * sizeof(glm::vec3));
+		cudaMalloc(&m_paths.pixel_indices, pixel_count * sizeof(int));
+		cudaMalloc(&m_paths.remaining_bounces, pixel_count * sizeof(int));
 
 		cudaMalloc(&m_geoms, m_scene.geoms.size() * sizeof(Geom));
 		cudaMemcpy(m_geoms, m_scene.geoms.data(), m_scene.geoms.size() * sizeof(Geom), cudaMemcpyHostToDevice);
@@ -205,14 +232,14 @@ void PathTracer::render()
 		//test_set_image(m_interop.surf_obj, 800, 800, time);
 		pathtrace(m_interop.surf_obj, m_settings, m_denoiser, denoise_interval, iteration++);
 		cudaExternalSemaphoreSignalParams params{};
-		cudaSignalExternalSemaphoresAsync(&m_cu_semaphores[m_frame_index], &params, 1, 0);
+		cudaSignalExternalSemaphoresAsync(&m_cu_semaphores[m_frame_index], &params, 1, nullptr);
 
 		// TODO
 		if (iteration >= 1)
 		{
 			// Save image
 
-			exit(EXIT_SUCCESS);
+			//exit(EXIT_SUCCESS);
 		}
 	}
 
@@ -392,7 +419,11 @@ void PathTracer::render()
 
 void PathTracer::destroy()
 {
-	cudaFree(m_paths);
+	cudaFree(m_paths.origins);
+	cudaFree(m_paths.directions);
+	cudaFree(m_paths.colors);
+	cudaFree(m_paths.pixel_indices);
+	cudaFree(m_paths.remaining_bounces);
 	cudaFree(m_intersections);
 	cudaFree(m_geoms);
 	cudaFree(m_materials);

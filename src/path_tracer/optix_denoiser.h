@@ -4,7 +4,7 @@
 class OptiXDenoiser
 {
 	OptixDeviceContext m_ctx = nullptr;
-	OptixDenoiser denoiser;
+	OptixDenoiser denoiser{};
 	OptixDenoiserSizes denoiser_sizes{};
 	CUdeviceptr m_state = NULL;
 	CUdeviceptr m_scratch = NULL;

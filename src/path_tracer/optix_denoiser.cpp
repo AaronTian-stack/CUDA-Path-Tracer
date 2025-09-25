@@ -50,6 +50,17 @@ bool OptiXDenoiser::init(unsigned int width, unsigned int height)
 	m_state = reinterpret_cast<CUdeviceptr>(state);
 	m_scratch = reinterpret_cast<CUdeviceptr>(scratch);
 
+    result = optixDenoiserSetup(denoiser, nullptr, width, height, m_state, denoiser_sizes.stateSizeInBytes, m_scratch, denoiser_sizes.withoutOverlapScratchSizeInBytes);
+    if (result != OPTIX_SUCCESS)
+    {
+#ifdef _WIN32
+        char buf[256];
+        sprintf(buf, "OptiX denoiser setup failed: %d\n", result);
+        OutputDebugStringA(buf);
+#endif
+		return false;
+    }
+
     return true;
 }
 

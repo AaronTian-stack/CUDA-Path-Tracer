@@ -57,12 +57,13 @@ struct Material
     // TODO: extension materials like transmission?
 };
 
-struct PathSegment
+struct PathSegments
 {
-	Ray ray;
-	glm::vec3 color;
-	int pixel_index;
-	int remaining_bounces;
+    glm::vec3* origins;
+    glm::vec3* directions;
+    glm::vec3* colors;
+    int* pixel_indices;
+    int* remaining_bounces;
 };
 
 struct IntersectionData

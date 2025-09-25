@@ -35,7 +35,7 @@ class PathTracer : public Application
 	cudaExternalSemaphore_t m_cu_semaphores[MAX_FRAMES_IN_FLIGHT]{};
 	PathTracerSettings m_settings;
 
-	PathSegment* m_paths = nullptr;
+	PathSegments m_paths{};
 	ShadeableIntersection* m_intersections = nullptr;
 	Geom* m_geoms = nullptr;
 	Material* m_materials = nullptr;

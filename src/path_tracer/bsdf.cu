@@ -128,7 +128,7 @@ __global__ void shade(
     int numPaths,
     const ShadeableIntersection* shadeableIntersections,
     const Material* materials,
-    PathSegment* pathSegments)
+    PathSegments path_segments)
 {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -137,7 +137,10 @@ __global__ void shade(
         return;
     }
 
-    auto& path_segment = pathSegments[idx];
+    // Reconstruct ray and color
+    Ray ray = {path_segments.origins[idx], path_segments.directions[idx]};
+    glm::vec3 color = path_segments.colors[idx];
+    int bounces = path_segments.remaining_bounces[idx];
     auto intersection = shadeableIntersections[idx];
     if (intersection.t > 0.0f)
     {
@@ -154,31 +157,37 @@ __global__ void shade(
         // Also with MIS we would somehow need to get a PDF, which is not possible like this
         if (glm::dot(material.emissive, material.emissive) > 0.f)
         {
-            path_segment.color *= material.emissive;
-            path_segment.remaining_bounces = 0;
+            color *= material.emissive;
+            bounces = 0;
         }
         else
         {
             IntersectionData isect;
-            isect.position = path_segment.ray.origin + intersection.t * path_segment.ray.direction;
+            isect.position = ray.origin + intersection.t * ray.direction;
             isect.normal = intersection.surface_normal;
 
             glm::vec3 wi;
             float pdf;
-            auto brdf = sample_f(material, isect, -path_segment.ray.direction, xi, &wi, &pdf);
+            auto brdf = sample_f(material, isect, -ray.direction, xi, &wi, &pdf);
             float NdotL = glm::max(0.f, glm::dot(isect.normal, wi)); // Use wi after sampling
 
-            path_segment.ray = spawn_ray(isect.position, wi);
-            path_segment.remaining_bounces--; // This should be ok since only one thread writes to this path segment
+            ray = spawn_ray(isect.position, wi);
+            bounces--;
 
             if (pdf != 0)
             {
-                path_segment.color *= brdf * NdotL / pdf;
+                color *= brdf * NdotL / pdf;
             }
         }
     }
     else
     {
-        path_segment.remaining_bounces = 0;
+        bounces = 0;
     }
+
+    // Write back
+    path_segments.origins[idx] = ray.origin;
+    path_segments.directions[idx] = ray.direction;
+    path_segments.colors[idx] = color;
+    path_segments.remaining_bounces[idx] = bounces;
 }
