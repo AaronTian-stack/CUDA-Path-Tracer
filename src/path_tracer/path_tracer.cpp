@@ -1,10 +1,15 @@
 ﻿#include "path_tracer.h"
 
 #include <csignal>
+#include <ctime>
 #include <imgui.h>
 #include <imgui_internal.h>
 #include <cuda_runtime.h>
 #include <SDL3/SDL.h>
+#include <sstream>
+#include <stb_image_write.h>
+#include <string>
+#include <vector>
 
 #include "bsdf.h"
 #include "cuda_pt.h"
@@ -240,12 +245,31 @@ void PathTracer::render()
 		cudaExternalSemaphoreSignalParams params{};
 		cudaSignalExternalSemaphoresAsync(&m_cu_semaphores[m_frame_index], &params, 1, nullptr);
 
-		// TODO
-		if (iteration >= 1)
+		if (iteration >= m_scene_settings.iterations)
 		{
 			// Save image
+			const auto pixel_count = res_x * res_y;
+			std::vector<glm::vec3> host_image(pixel_count);
+			cudaMemcpy(host_image.data(), m_images.out_denoise, pixel_count * sizeof(glm::vec3), cudaMemcpyDeviceToHost);
 
-			//exit(EXIT_SUCCESS);
+			std::vector<unsigned char> png_data(pixel_count * 3);
+			for (size_t i = 0; i < pixel_count; ++i) {
+				glm::vec3 color = glm::clamp(host_image[i], 0.0f, 1.0f);
+				png_data[i * 3 + 0] = static_cast<unsigned char>(color.r * 255.0f);
+				png_data[i * 3 + 1] = static_cast<unsigned char>(color.g * 255.0f);
+				png_data[i * 3 + 2] = static_cast<unsigned char>(color.b * 255.0f);
+			}
+			time_t now;
+			time(&now);
+			char buf[sizeof "0000-00-00_00-00-00z"];
+			strftime(buf, sizeof buf, "%Y-%m-%d_%H-%M-%Sz", gmtime(&now));
+			std::string currentTimeString = std::string(buf);
+			std::stringstream ss;
+			ss << m_scene_settings.output_name << "." << currentTimeString << "." << iteration << "samp.png";
+			stbi_write_png(ss.str().c_str(), res_x, res_y, 3, png_data.data(), res_x * 3);
+			printf("Image saved to: %s\n", ss.str().c_str());
+
+			exit(EXIT_SUCCESS);
 		}
 	}
 
