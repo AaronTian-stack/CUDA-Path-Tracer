@@ -5,7 +5,6 @@
 #include <imgui_internal.h>
 #include <cuda_runtime.h>
 #include <SDL3/SDL.h>
-#include <glm/gtc/constants.hpp>
 
 #include "bsdf.h"
 #include "cuda_pt.h"
@@ -60,7 +59,7 @@ void PathTracer::reset_scene()
 	cudaMemset(m_images.normal, 0, pixel_count * sizeof(glm::vec3));
 }
 
-void PathTracer::pathtrace(cudaSurfaceObject_t surf, const PathTracerSettings& settings, const OptiXDenoiser& denoiser,
+void PathTracer::pathtrace(const PathTracerSettings& settings, const OptiXDenoiser& denoiser,
                            int interval_to_denoise, int iteration)
 {
 	// Generate primary rays
@@ -167,8 +166,8 @@ void PathTracer::init_window()
 	// TODO: change based off command line settings
 	const pt::WindowSettings settings
 	{
-		.width = 800,
-		.height = 800,
+		.width = m_scene.camera.resolution.x,
+		.height = m_scene.camera.resolution.y,
 		.title = title,
 	};
 
@@ -177,7 +176,7 @@ void PathTracer::init_window()
 
 void PathTracer::create()
 {
-	m_context.create_texture(vk::Format::eR8G8B8A8Unorm, {800, 800}, &m_texture);
+	m_context.create_texture(vk::Format::eR8G8B8A8Unorm, {static_cast<uint32_t>(m_scene.camera.resolution.x), static_cast<uint32_t>(m_scene.camera.resolution.y)}, &m_texture);
 	THROW_IF_FALSE(import_vk_texture_cuda(m_texture, &m_interop));
 
 	for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
@@ -209,7 +208,7 @@ void PathTracer::create()
 
 	m_context.init_imgui(m_window, m_swapchain);
 
-	m_denoiser.init(800, 800);
+	m_denoiser.init(m_scene.camera.resolution.x, m_scene.camera.resolution.y);
 
 	++m_fence_ready_val[get_frame_index()];
 }
@@ -226,11 +225,18 @@ void PathTracer::render()
 		reset_scene();
 	}
 
+	const auto& camera = m_scene.camera;
+	const auto res_x = camera.resolution.x;
+	const auto res_y = camera.resolution.y;
+
 	// Do CUDA stuff
 	{
-		//float time = SDL_GetTicks() / 1000.0f;
-		//test_set_image(m_interop.surf_obj, 800, 800, time);
-		pathtrace(m_interop.surf_obj, m_settings, m_denoiser, denoise_interval, iteration++);
+		pathtrace(m_settings, m_denoiser, denoise_interval, iteration++);
+		
+		char title[256];
+		snprintf(title, sizeof(title), "CUDA Path Tracer | Iterations: %d", iteration);
+		SDL_SetWindowTitle(m_window.get_window(), title);
+		
 		cudaExternalSemaphoreSignalParams params{};
 		cudaSignalExternalSemaphoresAsync(&m_cu_semaphores[m_frame_index], &params, 1, nullptr);
 
@@ -288,10 +294,10 @@ void PathTracer::render()
 		.srcSubresource = { vk::ImageAspectFlagBits::eColor, 0, 0, 1 },
 	};
 	blit_region.srcOffsets[0] = vk::Offset3D{0,0,0};
-	blit_region.srcOffsets[1] = vk::Offset3D{800,800,1};
+	blit_region.srcOffsets[1] = vk::Offset3D{res_x,res_y,1};
 	blit_region.dstSubresource = { vk::ImageAspectFlagBits::eColor, 0, 0, 1 };
 	blit_region.dstOffsets[0] = vk::Offset3D{0,0,0};
-	blit_region.dstOffsets[1] = vk::Offset3D{800,800,1};
+	blit_region.dstOffsets[1] = vk::Offset3D{res_x,res_y,1};
 
 	cmd_buf.blitImage(m_texture.image, vk::ImageLayout::eTransferSrcOptimal, m_swapchain.images[swapchain_index], vk::ImageLayout::eTransferDstOptimal, 1, &blit_region, vk::Filter::eNearest);
 

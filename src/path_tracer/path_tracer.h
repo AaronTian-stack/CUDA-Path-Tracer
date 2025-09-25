@@ -43,7 +43,7 @@ class PathTracer : public Application
 	static constexpr auto denoise_interval = 10;
 
 	void reset_scene();
-	void pathtrace(cudaSurfaceObject_t surf, const PathTracerSettings& settings, const OptiXDenoiser& denoiser, int interval_to_denoise, int iteration);
+	void pathtrace(const PathTracerSettings& settings, const OptiXDenoiser& denoiser, int interval_to_denoise, int iteration);
 
 protected:
 	void init_window() override;
