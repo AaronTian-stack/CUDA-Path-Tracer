@@ -26,14 +26,14 @@ void Camera::rotate_around_target(float theta, float phi)
     glm::vec3 dir = glm::normalize(to_target);
     float current_angle = glm::acos(glm::clamp(glm::dot(dir, glm::vec3(0.0f, 1.0f, 0.0f)), -1.0f, 1.0f));
 
-    const float max_tolerance = 0.00174533f; // ~0.1 degrees
+    constexpr float max_tolerance = glm::radians(2.f);
 
     // Clamp phi to prevent flipping over poles
-    if (current_angle + phi < max_tolerance)
+    if (current_angle - phi < max_tolerance)
     {
         phi = max_tolerance - current_angle;
     }
-    if (current_angle + phi > glm::pi<float>() - max_tolerance)
+    if (current_angle - phi > glm::pi<float>() - max_tolerance)
     {
         phi = glm::pi<float>() - current_angle - max_tolerance;
     }
