@@ -99,6 +99,8 @@ bool Scene::load(const std::string& file_name, SceneSettings* settings)
     camera.look_at = glm::vec3(lookat[0], lookat[1], lookat[2]);
     camera.up = glm::vec3(up[0], up[1], up[2]);
 
+    camera.set_target_distance(glm::distance(camera.position, camera.look_at));
+
     //calculate fov based on resolution
     float yscaled = tan(fovy * (PI / 180));
     float xscaled = (yscaled * camera.resolution.x) / camera.resolution.y;

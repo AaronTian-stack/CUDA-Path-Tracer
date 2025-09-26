@@ -23,7 +23,6 @@ void Camera::rotate_around_target(float theta, float phi)
 {
     // Compute current angle with up vector
     glm::vec3 to_target = position - look_at;
-    float dist = glm::length(to_target);
     glm::vec3 dir = glm::normalize(to_target);
     float current_angle = glm::acos(glm::clamp(glm::dot(dir, glm::vec3(0.0f, 1.0f, 0.0f)), -1.0f, 1.0f));
 
@@ -47,7 +46,10 @@ void Camera::rotate_around_target(float theta, float phi)
     glm::mat4 rot_theta = glm::rotate(glm::mat4(1.0f), theta, glm::vec3(0.0f, 1.0f, 0.0f));
     position = look_at + glm::vec3(rot_theta * glm::vec4(new_pos - look_at, 1.0f));
 
-    update_vectors();
+    // Rotate the basis vectors
+    up = glm::normalize(glm::vec3(rot_theta * glm::vec4(glm::vec3(rot_phi * glm::vec4(up, 0.0f)), 0.0f)));
+    right = glm::normalize(glm::vec3(rot_theta * glm::vec4(glm::vec3(rot_phi * glm::vec4(right, 0.0f)), 0.0f)));
+    view = glm::normalize(look_at - position);
 }
 
 void Camera::translate_local(float x, float y)

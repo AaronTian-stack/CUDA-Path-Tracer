@@ -10,6 +10,8 @@
 #include <stb_image_write.h>
 #include <string>
 #include <vector>
+#define GLM_ENABLE_EXPERIMENTAL
+#include <glm/gtx/norm.hpp>
 
 #include "bsdf.h"
 #include "cuda_pt.h"
@@ -56,12 +58,7 @@ Images::~Images()
 void PathTracer::reset_scene()
 {
 	const auto pixel_count = m_scene.camera.resolution.x * m_scene.camera.resolution.y;
-	cudaMemset(m_intersections, 0, pixel_count * sizeof(ShadeableIntersection));
-	cudaMemset(m_images.image, 0, pixel_count * sizeof(glm::vec3));
-	cudaMemset(m_images.accumulated_albedo, 0, pixel_count * sizeof(glm::vec3));
-	cudaMemset(m_images.accumulated_normal, 0, pixel_count * sizeof(glm::vec3));
-	cudaMemset(m_images.albedo, 0, pixel_count * sizeof(glm::vec3));
-	cudaMemset(m_images.normal, 0, pixel_count * sizeof(glm::vec3));
+	m_images.clear(pixel_count);
 }
 
 void PathTracer::pathtrace(const PathTracerSettings& settings, const OptiXDenoiser& denoiser,
@@ -222,8 +219,76 @@ void PathTracer::render()
 {
 	static int iteration = 0;
 
-	// TODO: input
-	// On input, set iteration = 0
+	glm::vec2 mouse_position;
+	static glm::vec2 mouse_delta{};
+	static glm::vec2 last_mouse_pos{};
+	// Reset deltas on transition
+	static bool prev_relative_mode = false;
+
+	Uint32 mouse_flags = SDL_GetMouseState(&mouse_position.x, &mouse_position.y);
+
+	const bool left = mouse_flags & SDL_BUTTON_MASK(SDL_BUTTON_LEFT);
+	const bool right = mouse_flags & SDL_BUTTON_MASK(SDL_BUTTON_RIGHT);
+	const bool middle = mouse_flags & SDL_BUTTON_MASK(SDL_BUTTON_MIDDLE);
+
+	const auto pressed = left || right || middle;
+	SDL_SetWindowRelativeMouseMode(m_window.get_window(), pressed);
+
+	const bool relative_mode = SDL_GetWindowRelativeMouseMode(m_window.get_window());
+
+	if (relative_mode)
+	{
+		glm::vec3 d;
+		mouse_flags = SDL_GetRelativeMouseState(&d.x, &d.y);
+
+		if (!prev_relative_mode)
+		{
+			mouse_delta = {};
+		}
+		else
+		{
+			mouse_delta = d;
+		}
+	}
+	else
+	{
+		if (mouse_flags)
+		{
+			mouse_delta = mouse_position - last_mouse_pos;
+		}
+		else
+		{
+			mouse_delta = {};
+		}
+	}
+
+	last_mouse_pos = mouse_position;
+	prev_relative_mode = relative_mode;
+
+	if (ImGuiIO& io = ImGui::GetIO(); !io.WantCaptureMouse)
+	{
+		const auto delta = mouse_delta;
+		if ((pressed && glm::length2(mouse_delta) > 0))
+		{
+			iteration = 0;
+		}
+		if (left)
+		{
+			auto speed = 0.001f;
+			m_scene.camera.rotate_around_target(delta.x * speed, delta.y * speed);
+		}
+		if (right)
+		{
+			auto speed = 0.01f;
+			m_scene.camera.translate_local(-delta.x * speed, delta.y * speed);
+		}
+		if (middle)
+		{
+			float amount = -delta.y * 0.5f;
+			auto desired_distance = m_scene.camera.m_target_distance + amount;
+			m_scene.camera.set_target_distance(desired_distance);
+		}
+	}
 
 	if (iteration == 0)
 	{

@@ -40,6 +40,8 @@ class PathTracer : public Application
 	Geom* m_geoms = nullptr;
 	Material* m_materials = nullptr;
 
+	SDL_MouseButtonFlags m_mouse_buttons = {};
+
 	static constexpr auto denoise_interval = 10;
 
 	void reset_scene();
