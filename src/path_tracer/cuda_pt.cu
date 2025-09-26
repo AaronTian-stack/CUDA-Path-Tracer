@@ -236,7 +236,7 @@ void average_image_for_denoise(const dim3& grid, const dim3& block, glm::vec3* i
 
 void shade_paths(int threads, int iteration, int num_paths, ShadeableIntersection* intersections, Material* materials, PathSegments path_segments)
 {
-    dim3 block(128);
+    dim3 block(threads);
     dim3 grid(divup(num_paths, block.x));
     shade<<<grid, block>>>(iteration, num_paths, intersections, materials, path_segments);
 }

@@ -4,7 +4,7 @@
 #include <cuda_runtime_api.h>
 #include <optix_function_table_definition.h> // Do this only in one cpp file
 
-#ifdef _WIN32
+#ifdef _WIN64
 #include <windows.h>
 #endif
 
@@ -31,7 +31,7 @@ bool OptiXDenoiser::init(unsigned int width, unsigned int height)
     result = optixDenoiserCreate(m_ctx, OPTIX_DENOISER_MODEL_KIND_HDR, &o, &denoiser);
     if (result != OPTIX_SUCCESS)
     {
-#ifdef _WIN32
+#ifdef _WIN64
         char buf[256];
         sprintf(buf, "OptiX denoiser creation failed: %d\n", result);
         OutputDebugStringA(buf);
@@ -53,7 +53,7 @@ bool OptiXDenoiser::init(unsigned int width, unsigned int height)
     result = optixDenoiserSetup(denoiser, nullptr, width, height, m_state, denoiser_sizes.stateSizeInBytes, m_scratch, denoiser_sizes.withoutOverlapScratchSizeInBytes);
     if (result != OPTIX_SUCCESS)
     {
-#ifdef _WIN32
+#ifdef _WIN64
         char buf[256];
         sprintf(buf, "OptiX denoiser setup failed: %d\n", result);
         OutputDebugStringA(buf);
