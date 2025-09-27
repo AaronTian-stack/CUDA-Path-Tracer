@@ -4,13 +4,16 @@
 #include <vector>
 #include <glm/glm.hpp>
 
+#include "camera.h"
+#include "scene_structs.h"
+
 namespace pt
 {
 	// Partially adapted from my own open source project QhenkiX
 	// Self plug: https://github.com/AaronTian-stack/QhenkiX
 	struct glTFModel
 	{
-		bool load(const std::string& path);
+		bool load(const std::string& path, Camera* camera);
 
 		struct Accessor
 		{
@@ -20,7 +23,7 @@ namespace pt
 			int component_type = -1; // int, byte, short, float...
 			int buffer_view = -1;
 		};
-		std::vector<Accessor> accessors; // CPU
+		Accessor* d_accessors = nullptr; // CUDA device pointer to array
 
 		// Pass data view info to CUDA kernel
 		struct BufferView
@@ -30,67 +33,50 @@ namespace pt
 			size_t stride = 0;
 			int buffer_index = -1;
 		};
-		std::vector<BufferView> buffer_views; // CPU
-		std::vector<void*> cu_buffers; // Vector of CUDA device pointers to actual data
+		BufferView* d_buffer_views = nullptr;  
+		void** d_buffers = nullptr; // Array of CUDA device pointers to actual data
 
-		struct Material
-		{
-			struct
-			{
-				glm::vec4 factor;
-				int index = -1; // Texture index NOT image
-				int texture_coordinate_set = 0;
-			} base_color;
-			struct
-			{
-				float metallic_factor = 0.f;
-				float roughness_factor = 0.f;
-				int index = -1;
-				int texture_coordinate_set = 0;
-			} metallic_roughness;
-			struct
-			{
-				int index = -1;
-				int texture_coordinate_set = 0;
-				float scale = 1.f;
-			} normal;
-			struct
-			{
-				int index = -1;
-				int texture_coordinate_set = 0;
-				float strength = 1.f;
-			} occlusion;
-			struct
-			{
-				glm::vec3 factor;
-				int index = -1;
-				int texture_coordinate_set = 0;
-			} emissive;
-		};
-		Material* cu_materials = nullptr; // CUDA device pointer to array
+		Material* d_materials = nullptr; // CUDA device pointer to array
 
-		std::vector<cudaArray_t> cu_images;
-		std::vector<cudaTextureObject_t> cu_texture_sampler;
+		std::vector<cudaArray_t> d_images;
+		cudaTextureObject_t* d_textures = nullptr;
 
 		struct Primitive
 		{
 			int material_index = -1; // material index
 			int indices = -1; // accessor index
-			std::vector<int> attributes; // Accessor index
+			int position_accessor = -1;
+			int normal_accessor = -1;
+			int texcoord_accessor = -1;
 		};
-		std::vector<std::vector<Primitive>> meshes;
+		Primitive* d_primitives = nullptr;
 
-		struct Node
+		struct HostNode
 		{
-			int parent_index = -1;
-			int mesh_index = -1;
 			glm::mat4 local_transform;
 			glm::mat4 global_transform;
 			std::vector<int> children_indices;
+			int parent_index = -1;
+			int mesh_index = -1;
 		};
-		std::vector<Node> nodes;
+		struct DeviceNode
+		{
+			glm::mat4 global_transform;
+			int mesh_index = -1;
+			int num_children = 0;
+			int* children_indices = nullptr;
+		};
+		DeviceNode* d_nodes = nullptr;
+
+		glm::mat4 camera_global_transform;
+		int camera_index = -1;
 
 		int root_node = -1;
+		size_t num_buffers = 0;
+		size_t num_textures = 0;
+		size_t num_primitives = 0;
+		size_t num_nodes = 0;
+		size_t num_materials = 0;
 
 		~glTFModel();
 	};

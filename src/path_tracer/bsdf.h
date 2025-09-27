@@ -4,6 +4,6 @@
 
 #include "scene_structs.h"
 
-__global__ void shade(int iter, int num_paths, const ShadeableIntersection* shadeable_intersections, const Material* materials, PathSegments path_segments, cudaTextureObject_t hdri, float exposure);
+__global__ void shade(int iter, int num_paths, const ShadeableIntersection* shadeable_intersections, const Material* materials, PathSegments path_segments, cudaTextureObject_t hdri, cudaTextureObject_t* textures, float exposure);
 
-__device__ glm::vec3 sample_f(const Material& material, const IntersectionData& isect, const glm::vec3& woW, const glm::vec3& xi, glm::vec3* wiW, float* pdf);
+__device__ glm::vec3 sample_f(const Material& material, const IntersectionData& isect, const glm::vec3& woW, const glm::vec3& xi, glm::vec3* wiW, float* pdf, cudaTextureObject_t* textures);

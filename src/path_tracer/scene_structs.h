@@ -23,7 +23,7 @@ struct PathTracerSettings
 	bool sort_rays = false;
 	DisplayMode display_mode = PROGRESSIVE;
 	float exposure = 0.0f;
-	TonemapMode tonemap_mode = NONE;
+	TonemapMode tonemap_mode = ACES;
 };
 
 struct SceneSettings
@@ -59,11 +59,32 @@ struct Geom
 
 struct Material
 {
-    glm::vec4 albedo;
-    glm::vec3 emissive;
-    float metallic;
-    float roughness;
-    // TODO: extension materials like transmission?
+    struct
+    {
+        glm::vec4 factor;
+        int index = -1; // Texture index NOT image
+    } base_color;
+    struct
+    {
+        float metallic_factor = 0.f;
+        float roughness_factor = 0.f;
+        int index = -1;
+    } metallic_roughness;
+    struct
+    {
+        int index = -1;
+        float scale = 1.f;
+    } normal;
+    struct
+    {
+        int index = -1;
+        float strength = 1.f;
+    } occlusion;
+    struct
+    {
+        glm::vec3 factor;
+        int index = -1;
+    } emissive;
 };
 
 struct PathSegments
@@ -79,6 +100,7 @@ struct IntersectionData
 {
 	glm::vec3 position;
 	glm::vec3 normal;
+	glm::vec2 uv;
 };
 
 // Use with a corresponding PathSegment to do:
@@ -89,4 +111,5 @@ struct ShadeableIntersection
 	float t;
 	glm::vec3 surface_normal;
 	int material_id;
+	glm::vec2 uv;
 };

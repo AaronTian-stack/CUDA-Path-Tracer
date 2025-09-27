@@ -92,7 +92,15 @@ void PathTracer::pathtrace(const PathTracerSettings& settings, const OptiXDenois
 	{
 		cudaMemset(m_intersections, 0, pixel_count * sizeof(ShadeableIntersection));
 
-		compute_intersections(block_size_1D, depth, num_paths, m_paths, m_geoms, static_cast<int>(m_scene.geoms.size()), m_intersections);
+		// Exclusively glTF or default geometry
+		if (m_gltf.d_primitives)
+		{
+			compute_gltf_intersections(block_size_1D, num_paths, m_paths, m_gltf.d_nodes, m_gltf.num_nodes, m_gltf.d_primitives, m_gltf.d_accessors, m_gltf.d_buffer_views, m_gltf.d_buffers, m_intersections);
+		}
+		else
+		{
+			compute_intersections(block_size_1D, depth, num_paths, m_paths, m_geoms, static_cast<int>(m_scene.geoms.size()), m_intersections);
+		}
 		
 		if (depth++ == 0)
 		{
@@ -105,7 +113,7 @@ void PathTracer::pathtrace(const PathTracerSettings& settings, const OptiXDenois
 			sort_paths_by_material(m_intersections, m_paths, num_paths);
 		}
 
-		shade_paths(block_size_1D, iteration, num_paths, m_intersections, m_materials, m_paths, m_hdri_texture, settings.exposure);
+		shade_paths(block_size_1D, iteration, num_paths, m_intersections, m_materials, m_paths, m_hdri_texture, m_textures, settings.exposure);
 
 		num_paths = filter_paths_with_bounces(m_paths, num_paths);
 	}
@@ -201,7 +209,6 @@ void PathTracer::init_window()
 {
 	char title[256] = "CUDA Path Tracer";
 
-	// TODO: change based off command line settings
 	const pt::WindowSettings settings
 	{
 		.width = m_scene.camera.resolution.x,
@@ -240,6 +247,17 @@ void PathTracer::create()
 		cudaMalloc(&m_materials, m_scene.materials.size() * sizeof(Material));
 		cudaMemcpy(m_materials, m_scene.materials.data(), m_scene.materials.size() * sizeof(Material), cudaMemcpyHostToDevice);
 
+		if (m_gltf.d_primitives)
+		{
+			cudaFree(m_materials);
+			m_materials = m_gltf.d_materials;
+			m_textures = m_gltf.d_textures;
+		}
+		else
+		{
+			m_textures = nullptr;
+		}
+
 		cudaMalloc(&m_intersections, pixel_count * sizeof(ShadeableIntersection));
 		cudaMemset(m_intersections, 0, pixel_count * sizeof(ShadeableIntersection));
 	}
@@ -259,7 +277,7 @@ void PathTracer::create()
 				float r = channels >= 1 ? data[i * channels] : 0.0f;
 				float g = channels >= 2 ? data[i * channels + 1] : 0.0f;
 				float b = channels >= 3 ? data[i * channels + 2] : 0.0f;
-				host_data[i] = { r, g, b, 1.0f };
+				host_data[i] = {.x = r, .y = g, .z = b, .w = 1.0f };
 			}
 
 			cudaMemcpy2DToArray(m_hdri_data, 0, 0, host_data.data(), width * sizeof(float4), width * sizeof(float4), height, cudaMemcpyHostToDevice);
@@ -365,7 +383,7 @@ void PathTracer::render()
 		}
 		if (middle)
 		{
-			float amount = -delta.y * 0.5f;
+			float amount = -delta.y * 0.2f;
 			auto desired_distance = m_scene.camera.m_target_distance + amount;
 			m_scene.camera.set_target_distance(desired_distance);
 		}
@@ -635,7 +653,10 @@ void PathTracer::destroy()
 	cudaFree(m_paths.remaining_bounces);
 	cudaFree(m_intersections);
 	cudaFree(m_geoms);
-	cudaFree(m_materials);
+	if (!m_use_gltf_materials)
+	{
+		cudaFree(m_materials);
+	}
 
 	if (m_hdri_texture)
 	{
@@ -658,12 +679,12 @@ void PathTracer::destroy()
 
 bool PathTracer::init_scene(const char* file_name)
 {
-	const bool result = m_scene.load(file_name, &m_scene_settings);
+	bool result = m_scene.load(file_name, &m_scene_settings);
 	assert(m_scene_settings.iterations % denoise_interval == 0);
 
 	if (!m_scene.gltf_path.empty())
 	{
-		m_gltf.load(m_scene.gltf_path);
+		result = m_gltf.load(m_scene.gltf_path, &m_scene.camera);
 	}
 
 	return result;

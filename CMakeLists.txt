@@ -72,8 +72,10 @@ add_executable(${PROJECT_NAME} ${SOURCES} ${HEADERS})
 
 set(scene_files
     scenes/cornell.json
-    scenes/cornell_model.json
     scenes/sphere.json
+    scenes/polly.json
+    scenes/helmet.json
+    scenes/people.json
 )
 target_sources(${PROJECT_NAME} PRIVATE ${scene_files})
 

@@ -26,6 +26,7 @@ struct Images
 
 class PathTracer : public Application
 {
+	pt::glTFModel m_gltf{};
 	Scene m_scene{};
 	
 	OptiXDenoiser m_denoiser{};
@@ -44,10 +45,12 @@ class PathTracer : public Application
 	Geom* m_geoms = nullptr;
 	Material* m_materials = nullptr;
 
+	bool m_use_gltf_materials = false;
+
 	cudaArray_t m_hdri_data = nullptr; // Data
 	cudaTextureObject_t m_hdri_texture = 0; // Sampler
 
-	pt::glTFModel m_gltf{};
+	cudaTextureObject_t* m_textures = nullptr;
 
 	static constexpr auto denoise_interval = 10;
 

@@ -1,6 +1,7 @@
 #include "cuda_pt.h"
 #include <cuda_runtime.h>
 #include <glm/glm.hpp>
+#include <glm/gtc/matrix_inverse.hpp>
 #include <thrust/random.h>
 #include <thrust/sort.h>
 #include <thrust/partition.h>
@@ -74,7 +75,7 @@ __global__ void accumulate_albedo_normal(int num_paths, ShadeableIntersection* i
         {
             auto& mat = materials[inter.material_id];
 
-            albedo_image[index] += glm::vec3(mat.albedo);
+            albedo_image[index] += glm::vec3(mat.base_color.factor);
             normal_image[index] += inter.surface_normal;
         }
     }
@@ -173,6 +174,7 @@ __global__ void compute_intersections(int num_paths, PathSegments path_segments,
         if (hit_geom_index == -1)
         {
             intersections[path_index].t = -1.0f;
+            intersections[path_index].uv = glm::vec2(0.0f);
         }
         else
         {
@@ -180,6 +182,7 @@ __global__ void compute_intersections(int num_paths, PathSegments path_segments,
             intersections[path_index].t = t_min;
             intersections[path_index].material_id = geoms[hit_geom_index].material_id;
             intersections[path_index].surface_normal = normal;
+            intersections[path_index].uv = glm::vec2(0.0f);
         }
     }
 }
@@ -189,6 +192,203 @@ void compute_intersections(int threads, int depth, int num_paths, PathSegments p
     dim3 block(threads);
     dim3 grid(divup(num_paths, block.x));
     compute_intersections<<<grid, block>>>(num_paths, path_segments, geoms, num_geoms, intersections);
+}
+
+// https://en.wikipedia.org/wiki/Trumbore_intersection_algorithm
+__device__ float triangle_intersect(const Ray& ray, const glm::vec3& v0, const glm::vec3& v1, const glm::vec3& v2, glm::vec2& bary_out)
+{
+    const float EPSILON = 1e-6f;
+    glm::vec3 edge1 = v1 - v0;
+    glm::vec3 edge2 = v2 - v0;
+    glm::vec3 h = glm::cross(ray.direction, edge2);
+    float a = glm::dot(edge1, h);
+    if (a > -EPSILON && a < EPSILON)
+    {
+        return -1.0f; // Ray parallel to triangle
+    }
+    float f = 1.0f / a;
+    glm::vec3 s = ray.origin - v0;
+    float u = f * glm::dot(s, h);
+    if (u < 0.0f || u > 1.0f)
+    {
+        return -1.0f;
+    }
+    glm::vec3 q = glm::cross(s, edge1);
+    float v = f * glm::dot(ray.direction, q);
+    if (v < 0.0f || u + v > 1.0f)
+    {
+	    return -1.0f;
+	}
+    float t = f * glm::dot(edge2, q);
+    if (t > EPSILON)
+    {
+        bary_out = glm::vec2(u, v);
+        return t;
+    }
+    return -1.0f;
+}
+
+__global__ void compute_gltf_intersections_kernel(int num_paths, PathSegments path_segments, pt::glTFModel::DeviceNode* d_nodes, int num_nodes, pt::glTFModel::Primitive* d_primitives, pt::glTFModel::Accessor* d_accessors, pt::glTFModel::BufferView* d_buffer_views, void** d_cu_buffers, ShadeableIntersection* intersections)
+{
+    int path_index = blockIdx.x * blockDim.x + threadIdx.x;
+    if (path_index >= num_paths) return;
+
+    Ray ray = {path_segments.origins[path_index], path_segments.directions[path_index]};
+    ShadeableIntersection inter;
+    inter.t = -1.0f;
+    float closest_t = FLT_MAX;
+
+    // Need to hard code this because I can't import tiny_gltf here
+    const int TINYGLTF_PARAMETER_TYPE_UNSIGNED_SHORT = 5123;
+
+    for (int node_idx = 0; node_idx < num_nodes; node_idx++)
+    {
+        pt::glTFModel::DeviceNode node = d_nodes[node_idx];
+        if (node.mesh_index < 0)
+        {
+            continue;
+        }
+
+        pt::glTFModel::Primitive prim = d_primitives[node.mesh_index];
+
+        glm::mat4 inv_transform = glm::inverse(node.global_transform);
+        glm::vec3 local_origin = glm::vec3(inv_transform * glm::vec4(ray.origin, 1.0f));
+        glm::vec3 local_dir = glm::vec3(inv_transform * glm::vec4(ray.direction, 0.0f));
+        Ray local_ray = {local_origin, local_dir};
+
+        // Indices
+        pt::glTFModel::Accessor idx_acc = d_accessors[prim.indices];
+        pt::glTFModel::BufferView idx_bv = d_buffer_views[idx_acc.buffer_view];
+        void* idx_buffer = d_cu_buffers[idx_bv.buffer_index];
+        size_t idx_offset = idx_acc.offset + idx_bv.offset;
+        size_t idx_stride = idx_bv.stride;
+        if (idx_stride == 0)
+        {
+            idx_stride = idx_acc.component_type == TINYGLTF_PARAMETER_TYPE_UNSIGNED_SHORT ? 2 : 4;
+        }
+        int num_triangles = idx_acc.count / 3;
+
+        int pos_accessor_idx = prim.position_accessor;
+        int norm_accessor_idx = prim.normal_accessor;
+        int texcoord_accessor_idx = prim.texcoord_accessor;
+
+        if (pos_accessor_idx == -1)
+        {
+            continue;
+        }
+
+        // Positions
+        pt::glTFModel::Accessor pos_acc = d_accessors[pos_accessor_idx];
+        pt::glTFModel::BufferView pos_bv = d_buffer_views[pos_acc.buffer_view];
+        void* pos_buffer = d_cu_buffers[pos_bv.buffer_index];
+        size_t pos_offset = pos_acc.offset + pos_bv.offset;
+        size_t pos_stride = pos_bv.stride;
+        if (pos_stride == 0) 
+        {
+            pos_stride = 3 * sizeof(float);
+        }
+
+        // Normals
+        pt::glTFModel::Accessor norm_acc;
+        pt::glTFModel::BufferView norm_bv;
+        void* norm_buffer = nullptr;
+        size_t norm_offset = 0;
+        size_t norm_stride = 0;
+        if (norm_accessor_idx != -1) 
+        {
+            norm_acc = d_accessors[norm_accessor_idx];
+            norm_bv = d_buffer_views[norm_acc.buffer_view];
+            norm_buffer = d_cu_buffers[norm_bv.buffer_index];
+            norm_offset = norm_acc.offset + norm_bv.offset;
+            norm_stride = norm_bv.stride;
+            if (norm_stride == 0) norm_stride = 3 * sizeof(float);
+        }
+
+        // UVs
+        pt::glTFModel::Accessor texcoord_acc;
+        pt::glTFModel::BufferView texcoord_bv;
+        void* texcoord_buffer = nullptr;
+        size_t texcoord_offset = 0;
+        size_t texcoord_stride = 0;
+        if (texcoord_accessor_idx != -1) 
+        {
+            texcoord_acc = d_accessors[texcoord_accessor_idx];
+            texcoord_bv = d_buffer_views[texcoord_acc.buffer_view];
+            texcoord_buffer = d_cu_buffers[texcoord_bv.buffer_index];
+            texcoord_offset = texcoord_acc.offset + texcoord_bv.offset;
+            texcoord_stride = texcoord_bv.stride;
+            if (texcoord_stride == 0) texcoord_stride = 2 * sizeof(float);
+        }
+
+        for (int i = 0; i < num_triangles; i++)
+        {
+            // Get indices
+            int i0, i1, i2;
+            if (idx_acc.component_type == TINYGLTF_PARAMETER_TYPE_UNSIGNED_SHORT)
+            {
+                auto indices = reinterpret_cast<uint16_t*>(static_cast<uint8_t*>(idx_buffer) + idx_offset + i * 3 * idx_stride);
+                i0 = indices[0];
+                i1 = indices[1];
+                i2 = indices[2];
+            }
+            else
+            {
+                auto indices = reinterpret_cast<uint32_t*>(static_cast<uint8_t*>(idx_buffer) + idx_offset + i * 3 * idx_stride);
+                i0 = indices[0];
+                i1 = indices[1];
+                i2 = indices[2];
+            }
+
+            // Positions
+            glm::vec3 v0 = *reinterpret_cast<glm::vec3*>(static_cast<uint8_t*>(pos_buffer) + pos_offset + i0 * pos_stride);
+            glm::vec3 v1 = *reinterpret_cast<glm::vec3*>(static_cast<uint8_t*>(pos_buffer) + pos_offset + i1 * pos_stride);
+            glm::vec3 v2 = *reinterpret_cast<glm::vec3*>(static_cast<uint8_t*>(pos_buffer) + pos_offset + i2 * pos_stride);
+
+            glm::vec3 geometric_normal = glm::normalize(glm::cross(v1 - v0, v2 - v0));
+
+			glm::vec3 n0, n1, n2;
+            n0 = n1 = n2 = geometric_normal;
+
+            if (norm_accessor_idx != -1) 
+            {
+                n0 = *reinterpret_cast<glm::vec3*>(static_cast<uint8_t*>(norm_buffer) + norm_offset + i0 * norm_stride);
+                n1 = *reinterpret_cast<glm::vec3*>(static_cast<uint8_t*>(norm_buffer) + norm_offset + i1 * norm_stride);
+                n2 = *reinterpret_cast<glm::vec3*>(static_cast<uint8_t*>(norm_buffer) + norm_offset + i2 * norm_stride);
+            }
+
+            glm::vec2 uv0, uv1, uv2;
+            uv0 = uv1 = uv2 = glm::vec2(0.0f);
+
+            if (texcoord_accessor_idx != -1) 
+            {
+                uv0 = *reinterpret_cast<glm::vec2*>(static_cast<uint8_t*>(texcoord_buffer) + texcoord_offset + i0 * texcoord_stride);
+                uv1 = *reinterpret_cast<glm::vec2*>(static_cast<uint8_t*>(texcoord_buffer) + texcoord_offset + i1 * texcoord_stride);
+                uv2 = *reinterpret_cast<glm::vec2*>(static_cast<uint8_t*>(texcoord_buffer) + texcoord_offset + i2 * texcoord_stride);
+            }
+
+            glm::vec2 bary;
+            float t = triangle_intersect(local_ray, v0, v1, v2, bary);
+            if (t > 0.0f && t < closest_t)
+            {
+                closest_t = t;
+                inter.t = t;
+                glm::vec3 local_normal = bary.x * n1 + bary.y * n2 + (1.0f - bary.x - bary.y) * n0;
+                glm::mat3 normal_matrix = glm::transpose(glm::inverse(glm::mat3(node.global_transform)));
+                inter.surface_normal = glm::normalize(normal_matrix * local_normal);
+                inter.material_id = prim.material_index;
+                inter.uv = bary.x * uv1 + bary.y * uv2 + (1.0f - bary.x - bary.y) * uv0;
+            }
+        }
+    }
+
+    intersections[path_index] = inter;
+}
+
+void compute_gltf_intersections(int threads, int num_paths, PathSegments path_segments, pt::glTFModel::DeviceNode* d_nodes, int num_nodes, pt::glTFModel::Primitive* d_primitives, pt::glTFModel::Accessor* d_accessors, pt::glTFModel::BufferView* d_buffer_views, void** d_cu_buffers, ShadeableIntersection* intersections)
+{
+    dim3 block(threads);
+    dim3 grid(divup(num_paths, block.x));
+    compute_gltf_intersections_kernel<<<grid, block>>>(num_paths, path_segments, d_nodes, num_nodes, d_primitives, d_accessors, d_buffer_views, d_cu_buffers, intersections);
 }
 
 __global__ void final_gather_kernel(int initial_num_paths, glm::vec3* image, PathSegments path_segments)
@@ -234,11 +434,11 @@ void average_image_for_denoise(const dim3& grid, const dim3& block, glm::vec3* i
     average_image_for_denoise<<<grid, block>>>(image, resolution, iter, in_denoise);
 }
 
-void shade_paths(int threads, int iteration, int num_paths, ShadeableIntersection* intersections, Material* materials, PathSegments path_segments, cudaTextureObject_t hdri_texture, float exposure)
+void shade_paths(int threads, int iteration, int num_paths, ShadeableIntersection* intersections, Material* materials, PathSegments path_segments, cudaTextureObject_t hdri_texture, cudaTextureObject_t* textures, float exposure)
 {
     dim3 block(threads);
     dim3 grid(divup(num_paths, block.x));
-    shade<<<grid, block>>>(iteration, num_paths, intersections, materials, path_segments, hdri_texture, exposure);
+    shade<<<grid, block>>>(iteration, num_paths, intersections, materials, path_segments, hdri_texture, textures, exposure);
 }
 
 int filter_paths_with_bounces(PathSegments path_segments, int num_paths)

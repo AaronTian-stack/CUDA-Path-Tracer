@@ -46,81 +46,90 @@ __device__ glm::mat3 world_to_local(const glm::vec3& nor)
     return transpose(local_to_world(nor));
 }
 
-__device__ glm::vec3 sample_f(const Material& material, const IntersectionData& isect, const glm::vec3& woW, const glm::vec3& xi, glm::vec3* wiW, float* pdf)
+__device__ glm::vec3 sample_f(const Material& material, const IntersectionData& isect, const glm::vec3& woW, const glm::vec3& xi, glm::vec3* wiW, float* pdf, cudaTextureObject_t* textures)
 {
-    glm::vec3 N = isect.normal;
-    glm::vec3 V = woW; // In rasterizer you would take vector from fragment position
+	glm::vec3 N = isect.normal;
+	glm::vec3 V = woW; // In rasterizer you would take vector from fragment position
 
-    const glm::vec3 albedo = glm::vec3(material.albedo);
-    const float roughness = material.roughness;
-    const float metallic = material.metallic;
+    glm::vec3 albedo = glm::vec3(material.base_color.factor);
 
-    float ggx_pdf = 0;
-    float diffuse_pdf = 0;
-    if (xi.z < metallic)
+    if (textures && material.base_color.index >= 0)
     {
-        if (roughness == 0)
-        {
-            *wiW = reflect(-woW, N);
-            ggx_pdf = 1.f;
-            diffuse_pdf = 0.f;
-        }
-        else
-        {
-            auto wo = world_to_local(N) * woW;
-            if (wo.z == 0) return glm::vec3(0.);
-
-            glm::vec3 wh = sample_wh(wo, glm::vec2(xi), roughness);
-            glm::vec3 wi = reflect(-wo, wh);
-            *wiW = local_to_world(N) * wi;
-            diffuse_pdf = square_to_hemisphere_cosine_pdf(wi);
-            if (!same_hemisphere(wo, wi)) return glm::vec3(0.f);
-            ggx_pdf = trowbridge_reitz_pdf(wo, wh, roughness) / (4 * dot(wo, wh));
-        }
-    }
-    else
-    {
-        // Diffuse Sample
-        *wiW = square_to_hemisphere_cosine(glm::vec2(xi));
-        // TODO: I think ggx_pdf is wrong here but it looks ok I guess
-        diffuse_pdf = square_to_hemisphere_cosine_pdf(*wiW);
-        *wiW = local_to_world(N) * *wiW;
+        auto base_color = tex2D<float4>(textures[material.base_color.index], isect.uv.x, isect.uv.y);
+		albedo *= glm::vec3(base_color.x, base_color.y, base_color.z);
     }
 
-    *pdf = metallic * ggx_pdf + (1.f - metallic) * diffuse_pdf;
+    const float roughness = material.metallic_roughness.roughness_factor;
+    const float metallic = material.metallic_roughness.metallic_factor;
 
-    const auto& L = *wiW;
+	float ggx_pdf = 0;
+	float diffuse_pdf = 0;
+	if (xi.z < metallic)
+	{
+	    if (roughness == 0)
+	    {
+	        *wiW = reflect(-woW, N);
+	        ggx_pdf = 1.f;
+	        diffuse_pdf = 0.f;
+	    }
+	    else
+	    {
+	        auto wo = world_to_local(N) * woW;
+	        if (wo.z == 0) return glm::vec3(0.);
 
-    glm::vec3 F0 = glm::mix(glm::vec3(0.04f), albedo, glm::vec3(metallic));
+	        glm::vec3 wh = sample_wh(wo, glm::vec2(xi), roughness);
+	        if (glm::abs(glm::dot(wo, wh)) < 1e-6f) return glm::vec3(0.f);
+	        glm::vec3 wi = reflect(-wo, wh);
+	        *wiW = local_to_world(N) * wi;
+	        diffuse_pdf = square_to_hemisphere_cosine_pdf(wi);
+	        if (!same_hemisphere(wo, wi)) return glm::vec3(0.f);
+	        ggx_pdf = trowbridge_reitz_pdf(wo, wh, roughness) / (4 * glm::dot(wo, wh));
+	    }
+	}
+	else
+	{
+	    // Diffuse Sample
+	    *wiW = square_to_hemisphere_cosine(glm::vec2(xi));
+	    // TODO: I think ggx_pdf is wrong here but it looks ok I guess
+	    diffuse_pdf = square_to_hemisphere_cosine_pdf(*wiW);
+	    *wiW = local_to_world(N) * *wiW;
+	}
 
-    const glm::vec3	H = glm::normalize(L + V);
-    const float	NdotV = abs(dot(N, V)) + 1e-5f;
-    const float NdotL = glm::max(0.f, dot(L, N));
-    const float LdotH = glm::max(0.f, dot(L, H));
-    const float	NdotH = glm::max(0.f, dot(H, N));
+	*pdf = metallic * ggx_pdf + (1.f - metallic) * diffuse_pdf;
 
-    glm::vec3 F;
-    glm::vec3 specular = get_specular(NdotV, NdotL, LdotH, NdotH, roughness, F0, &F);
+	const auto& L = *wiW;
 
-    // Otherwise dividing by roughness in GGX which results in a NaN
-    if (roughness == 0.f)
-    {
-        float NdotL_spec = glm::max(0.f, dot(N, *wiW));
-        if (NdotL_spec > 0.f)
-        {
-            specular = F / NdotL_spec;
-        }
-        else
-        {
-            specular = glm::vec3(0.f);
-        }
-    }
+	glm::vec3 F0 = glm::mix(glm::vec3(0.04f), albedo, glm::vec3(metallic));
 
-    float Fd = fr_disney_diffuse(NdotV, NdotL, LdotH, roughness);
-    glm::vec3 kD = (glm::vec3(1.f) - F) * (1.f - metallic);
-    glm::vec3 diffuse = kD * (albedo * Fd / PI);
+	const glm::vec3	H = glm::normalize(L + V);
+	const float	NdotV = abs(dot(N, V)) + 1e-5f;
+	const float NdotL = glm::max(0.f, dot(L, N));
+	if (NdotL <= 0.f) return glm::vec3(0.f);
+	const float LdotH = glm::max(0.f, dot(L, H));
+	const float	NdotH = glm::max(0.f, dot(H, N));
 
-    return diffuse + specular;
+	glm::vec3 F;
+	glm::vec3 specular = get_specular(NdotV, NdotL, LdotH, NdotH, roughness, F0, &F);
+
+	// Otherwise dividing by roughness in GGX which results in a NaN
+	if (roughness == 0.f)
+	{
+	    float NdotL_spec = glm::max(0.f, dot(N, *wiW));
+	    if (NdotL_spec > 0.f)
+	    {
+	        specular = F / NdotL_spec;
+	    }
+	    else
+	    {
+	        specular = glm::vec3(0.f);
+	    }
+	}
+
+	float Fd = fr_disney_diffuse(NdotV, NdotL, LdotH, roughness);
+	glm::vec3 kD = (glm::vec3(1.f) - F) * (1.f - metallic);
+	glm::vec3 diffuse = kD * (albedo * Fd / PI);
+
+	return diffuse + specular;
 }
 
 struct ShadeableIntersection;
@@ -131,6 +140,7 @@ __global__ void shade(
 	const Material* materials,
 	PathSegments path_segments,
 	cudaTextureObject_t hdri,
+	cudaTextureObject_t* textures,
 	float exposure)
 {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -156,11 +166,18 @@ __global__ void shade(
         // Cool stuff like glass needs glTF extensions like transmission
 
         const auto material = materials[intersection.material_id];
-        // Every object has uniform material. But if you hit the part of the object that is not emissive, you would want to continue
-        // Also with MIS we would somehow need to get a PDF, which is not possible like this
-        if (glm::dot(material.emissive, material.emissive) > 0.f)
+
+        glm::vec3 emissive_color = glm::vec3(material.emissive.factor);
+        if (textures && material.emissive.index >= 0)
         {
-            color *= material.emissive;
+            auto emissive_tex = tex2D<float4>(textures[material.emissive.index], intersection.uv.x, intersection.uv.y);
+            emissive_color *= glm::vec3(emissive_tex.x, emissive_tex.y, emissive_tex.z);
+        }
+
+        // Treat emission as light source
+        if (glm::dot(emissive_color, emissive_color) > 0.f)
+        {
+            color *= emissive_color;
             bounces = 0;
         }
         else
@@ -168,10 +185,11 @@ __global__ void shade(
             IntersectionData isect;
             isect.position = ray.origin + intersection.t * ray.direction;
             isect.normal = intersection.surface_normal;
+            isect.uv = intersection.uv;
 
             glm::vec3 wi;
             float pdf;
-            auto brdf = sample_f(material, isect, -ray.direction, xi, &wi, &pdf);
+            auto brdf = sample_f(material, isect, -ray.direction, xi, &wi, &pdf, textures);
             float NdotL = glm::max(0.f, glm::dot(isect.normal, wi)); // Use wi after sampling
 
             ray = spawn_ray(isect.position, wi);
@@ -192,6 +210,10 @@ __global__ void shade(
             float v = acos(dir.y) / PI;
             float4 hdri_color = tex2D<float4>(hdri, u, v);
             color *= glm::vec3(hdri_color.x, hdri_color.y, hdri_color.z) * pow(2.0f, exposure);
+        }
+        else
+        {
+            color = glm::vec3(0.f);
         }
         bounces = 0;
     }

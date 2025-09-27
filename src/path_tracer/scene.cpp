@@ -21,35 +21,38 @@ bool Scene::load(const std::string& file_name, SceneSettings* settings)
 
     std::ifstream f(file_name);
     nlohmann::json data = json::parse(f);
-    const auto& materialsData = data["Materials"];
     std::unordered_map<std::string, uint32_t> mat_name_to_id;
-    for (const auto& item : materialsData.items())
+    if (data.contains("Materials"))
     {
-        const auto& name = item.key();
-        const auto& p = item.value();
-        Material new_material{};
-        if (p["TYPE"] == "Diffuse")
+        const auto& materials_data = data["Materials"];
+        for (const auto& item : materials_data.items())
         {
-            const auto& col = p["RGB"];
-            new_material.albedo = glm::vec4(col[0], col[1], col[2], 1.f);
-            new_material.roughness = 1.0f;
-            new_material.metallic = 0.0f;
+            const auto& name = item.key();
+            const auto& p = item.value();
+            Material new_material{};
+            if (p["TYPE"] == "Diffuse")
+            {
+                const auto& col = p["RGB"];
+                new_material.base_color.factor = glm::vec4(col[0], col[1], col[2], 1.f);
+                new_material.metallic_roughness.roughness_factor = 1.0f;
+                new_material.metallic_roughness.metallic_factor = 0.0f;
+            }
+            else if (p["TYPE"] == "Emitting")
+            {
+                const auto& col = p["RGB"];
+                new_material.emissive.factor = glm::vec3(col[0], col[1], col[2]) * static_cast<float>(p["EMITTANCE"]);
+                new_material.base_color.factor = glm::vec4(col[0], col[1], col[2], 1.0f);
+            }
+            else if (p["TYPE"] == "Specular")
+            {
+                const auto& col = p["RGB"];
+                new_material.base_color.factor = glm::vec4(col[0], col[1], col[2], 1.0f);
+                new_material.metallic_roughness.roughness_factor = p.contains("ROUGHNESS") ? static_cast<float>(p["ROUGHNESS"]) : 0.f;
+                new_material.metallic_roughness.metallic_factor = p.contains("METALLIC") ? static_cast<float>(p["METALLIC"]) : 0.f;
+            }
+            mat_name_to_id[name] = materials.size();
+            materials.emplace_back(new_material);
         }
-        else if (p["TYPE"] == "Emitting")
-        {
-            const auto& col = p["RGB"];
-            new_material.emissive = glm::vec3(col[0], col[1], col[2]) * static_cast<float>(p["EMITTANCE"]);
-            new_material.albedo = glm::vec4(col[0], col[1], col[2], 1.0f); // Set albedo for emissive too
-        }
-        else if (p["TYPE"] == "Specular")
-        {
-            const auto& col = p["RGB"];
-            new_material.albedo = glm::vec4(col[0], col[1], col[2], 1.0f);
-            new_material.roughness = p.contains("ROUGHNESS") ? static_cast<float>(p["ROUGHNESS"]) : 0.f;
-            new_material.metallic = p.contains("METALLIC") ? static_cast<float>(p["METALLIC"]) : 0.f;
-        }
-        mat_name_to_id[name] = materials.size();
-        materials.emplace_back(new_material);
     }
     if (data.contains("Objects"))
     {
