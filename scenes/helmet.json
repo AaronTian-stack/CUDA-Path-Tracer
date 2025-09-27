@@ -9,5 +9,6 @@
     "LOOKAT": [ 0.0, 2.0, 0.0 ],
     "UP": [ 0.0, 1.0, 0.0 ]
   },
+  "HDRI": "../scenes/artist_workshop_2k.hdr",
   "GLTF": "../scenes/helmet.glb"
 }

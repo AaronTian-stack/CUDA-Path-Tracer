@@ -55,9 +55,6 @@ __host__ __device__ float box_intersection_test(
         intersectionPoint = multiply_mv(box.transform, glm::vec4(get_point_on_ray(q, tmin), 1.0f));
         normal = glm::normalize(multiply_mv(box.invTranspose, glm::vec4(tmin_n, 0.0f)));
 
-  //      auto t = glm::length(r.origin - intersectionPoint);;
-		//printf("cube fuck t: %f\n", t);
-
         return glm::length(r.origin - intersectionPoint);
     }
 

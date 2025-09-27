@@ -11,6 +11,8 @@
 #include "intersection.h"
 #include "util.h"
 
+#define ENABLE_AABB_CULLING 1
+
 // Debug kernel to write cosine gradient to texture
 __global__ void set_image_uv(cudaSurfaceObject_t surf, size_t width, size_t height, float time)
 {
@@ -194,6 +196,41 @@ void compute_intersections(int threads, int depth, int num_paths, PathSegments p
     compute_intersections<<<grid, block>>>(num_paths, path_segments, geoms, num_geoms, intersections);
 }
 
+__device__ float ray_aabb_intersect(const Ray& ray, const glm::vec3& min, const glm::vec3& max)
+{
+    float tmin = -FLT_MAX, tmax = FLT_MAX;
+
+    for (int i = 0; i < 3; ++i) {
+        if (glm::abs(ray.direction[i]) < 1e-8f) 
+        {
+            // Ray parallel to axis
+            if (ray.origin[i] < min[i] || ray.origin[i] > max[i]) 
+            {
+                return -1.0f;
+            }
+        }
+    	else 
+        {
+            float invD = 1.0f / ray.direction[i];
+            float t0 = (min[i] - ray.origin[i]) * invD;
+            float t1 = (max[i] - ray.origin[i]) * invD;
+            if (invD < 0.0f) 
+            {
+                float temp = t0;
+                t0 = t1;
+                t1 = temp;
+            }
+            tmin = glm::max(tmin, t0);
+            tmax = glm::min(tmax, t1);
+            if (tmax <= tmin) 
+            {
+                return -1.0f;
+            }
+        }
+    }
+    return tmin > 0.0f || tmax > 0.0f ? glm::max(tmin, 0.0f) : -1.0f;
+}
+
 // https://en.wikipedia.org/wiki/Trumbore_intersection_algorithm
 __device__ float triangle_intersect(const Ray& ray, const glm::vec3& v0, const glm::vec3& v1, const glm::vec3& v2, glm::vec2& bary_out)
 {
@@ -319,6 +356,14 @@ __global__ void compute_gltf_intersections_kernel(int num_paths, PathSegments pa
             texcoord_stride = texcoord_bv.stride;
             if (texcoord_stride == 0) texcoord_stride = 2 * sizeof(float);
         }
+
+#ifdef ENABLE_AABB_CULLING
+        // AABB culling
+        if (ray_aabb_intersect(local_ray, prim.aabb.min, prim.aabb.max) < 0.0f)
+        {
+            continue;
+        }
+#endif
 
         for (int i = 0; i < num_triangles; i++)
         {

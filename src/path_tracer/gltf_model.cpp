@@ -2,6 +2,7 @@
 
 #include <tiny_gltf.h>
 #ifdef _WIN64
+#define NOMINMAX
 #include <windows.h>
 #endif
 #include <cuda_runtime.h>
@@ -150,6 +151,37 @@ bool process_meshes(const tinygltf::Model& tiny_model, pt::glTFModel* model)
 		if (prim.attributes.count("POSITION")) p.position_accessor = prim.attributes.at("POSITION");
 		if (prim.attributes.count("NORMAL")) p.normal_accessor = prim.attributes.at("NORMAL");
 		if (prim.attributes.count("TEXCOORD_0")) p.texcoord_accessor = prim.attributes.at("TEXCOORD_0");
+
+		// Compute AABB
+		if (p.position_accessor != -1)
+		{
+			const auto& pos_acc = tiny_model.accessors[p.position_accessor];
+			const auto& pos_bv = tiny_model.bufferViews[pos_acc.bufferView];
+			const auto& buffer = tiny_model.buffers[pos_bv.buffer];
+			size_t pos_offset = pos_acc.byteOffset + pos_bv.byteOffset;
+			size_t pos_stride = pos_bv.byteStride;
+			if (pos_stride == 0) pos_stride = 3 * sizeof(float);
+			size_t num_vertices = pos_acc.count;
+
+			glm::vec3 min_pos(FLT_MAX);
+			glm::vec3 max_pos(-FLT_MAX);
+
+			for (size_t j = 0; j < num_vertices; ++j)
+			{
+				const float* pos = reinterpret_cast<const float*>(&buffer.data[pos_offset + j * pos_stride]);
+				glm::vec3 vertex(pos[0], pos[1], pos[2]);
+				min_pos = glm::min(min_pos, vertex);
+				max_pos = glm::max(max_pos, vertex);
+			}
+			p.aabb.min = min_pos - glm::vec3(1e-5f);
+			p.aabb.max = max_pos + glm::vec3(1e-5f);
+		}
+		else
+		{
+			p.aabb.min = glm::vec3(0.0f);
+			p.aabb.max = glm::vec3(0.0f);
+		}
+
 		cudaMemcpy(model->d_primitives + i, &p, sizeof(pt::glTFModel::Primitive), cudaMemcpyHostToDevice);
 	}
 	return true;

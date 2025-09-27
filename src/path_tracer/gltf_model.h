@@ -41,6 +41,12 @@ namespace pt
 		std::vector<cudaArray_t> d_images;
 		cudaTextureObject_t* d_textures = nullptr;
 
+		struct AABB
+		{
+			glm::vec3 min;
+			glm::vec3 max;
+		};
+
 		struct Primitive
 		{
 			int material_index = -1; // material index
@@ -48,6 +54,7 @@ namespace pt
 			int position_accessor = -1;
 			int normal_accessor = -1;
 			int texcoord_accessor = -1;
+			AABB aabb;
 		};
 		Primitive* d_primitives = nullptr;
 
