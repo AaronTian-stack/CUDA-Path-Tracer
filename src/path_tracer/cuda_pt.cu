@@ -127,7 +127,7 @@ void sort_paths_by_material(ShadeableIntersection* intersections, PathSegments p
         });
 }
 
-__global__ void compute_intersections(int depth, int num_paths, PathSegments path_segments, Geom* geoms, int num_geoms, ShadeableIntersection* intersections)
+__global__ void compute_intersections(int num_paths, PathSegments path_segments, Geom* geoms, int num_geoms, ShadeableIntersection* intersections)
 {
     int path_index = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -188,7 +188,7 @@ void compute_intersections(int threads, int depth, int num_paths, PathSegments p
 {
     dim3 block(threads);
     dim3 grid(divup(num_paths, block.x));
-    compute_intersections<<<grid, block>>>(depth, num_paths, path_segments, geoms, num_geoms, intersections);
+    compute_intersections<<<grid, block>>>(num_paths, path_segments, geoms, num_geoms, intersections);
 }
 
 __global__ void final_gather_kernel(int initial_num_paths, glm::vec3* image, PathSegments path_segments)
@@ -234,11 +234,11 @@ void average_image_for_denoise(const dim3& grid, const dim3& block, glm::vec3* i
     average_image_for_denoise<<<grid, block>>>(image, resolution, iter, in_denoise);
 }
 
-void shade_paths(int threads, int iteration, int num_paths, ShadeableIntersection* intersections, Material* materials, PathSegments path_segments)
+void shade_paths(int threads, int iteration, int num_paths, ShadeableIntersection* intersections, Material* materials, PathSegments path_segments, cudaTextureObject_t hdri_texture, float exposure)
 {
     dim3 block(threads);
     dim3 grid(divup(num_paths, block.x));
-    shade<<<grid, block>>>(iteration, num_paths, intersections, materials, path_segments);
+    shade<<<grid, block>>>(iteration, num_paths, intersections, materials, path_segments, hdri_texture, exposure);
 }
 
 int filter_paths_with_bounces(PathSegments path_segments, int num_paths)
@@ -250,4 +250,64 @@ int filter_paths_with_bounces(PathSegments path_segments, int num_paths)
             return thrust::get<4>(t) > 0;
         });
     return static_cast<int>(new_end - zip_begin);
+}
+
+__global__ void aces_tonemap_kernel(glm::vec3* input, glm::vec3* output, size_t width, size_t height, float scale)
+{
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
+    if (x >= width || y >= height) return;
+    int index = x + y * width;
+    glm::vec3 color = input[index] * scale;
+    // ACES approximation
+    // https://knarkowicz.wordpress.com/2016/01/06/aces-filmic-tone-mapping-curve/
+    const float a = 2.51f;
+    const float b = 0.03f;
+    const float c = 2.43f;
+    const float d = 0.59f;
+    const float e = 0.14f;
+    glm::vec3 result = (color * (a * color + b)) / (color * (c * color + d) + e);
+    output[index] = glm::clamp(result, 0.0f, 1.0f);
+}
+
+void aces_tonemap(const dim3& grid, const dim3& block, glm::vec3* input, glm::vec3* output, size_t width, size_t height, float scale)
+{
+    aces_tonemap_kernel<<<grid, block>>>(input, output, width, height, scale);
+}
+
+__global__ void pbr_neutral_tonemap_kernel(glm::vec3* input, glm::vec3* output, size_t width, size_t height, float scale)
+{
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
+    if (x >= width || y >= height) return;
+    int index = x + y * width;
+    glm::vec3 color = input[index] * scale;
+
+    // https://github.com/KhronosGroup/ToneMapping/blob/main/PBR_Neutral/pbrNeutral.glsl
+    const float start_compression = 0.8f - 0.04f;
+    const float desaturation = 0.15f;
+
+    float x_min = glm::min(color.r, glm::min(color.g, color.b));
+    float offset = x_min < 0.08f ? x_min - 6.25f * x_min * x_min : 0.04f;
+    color -= offset;
+
+    float peak = glm::max(color.r, glm::max(color.g, color.b));
+    if (peak < start_compression)
+    {
+        output[index] = glm::clamp(color, 0.0f, 1.0f);
+        return;
+    }
+
+    const float d = 1.0f - start_compression;
+    float newPeak = 1.0f - d * d / (peak + d - start_compression);
+    color *= newPeak / peak;
+
+    float g = 1.0f - 1.0f / (desaturation * (peak - newPeak) + 1.0f);
+    color = glm::mix(color, newPeak * glm::vec3(1.0f, 1.0f, 1.0f), g);
+    output[index] = glm::clamp(color, 0.0f, 1.0f);
+}
+
+void pbr_neutral_tonemap(const dim3& grid, const dim3& block, glm::vec3* input, glm::vec3* output, size_t width, size_t height, float scale)
+{
+    pbr_neutral_tonemap_kernel<<<grid, block>>>(input, output, width, height, scale);
 }

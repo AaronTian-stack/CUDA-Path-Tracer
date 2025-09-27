@@ -51,36 +51,43 @@ bool Scene::load(const std::string& file_name, SceneSettings* settings)
         mat_name_to_id[name] = materials.size();
         materials.emplace_back(new_material);
     }
-    const auto& objects_data = data["Objects"];
-    for (const auto& p : objects_data)
+    if (data.contains("Objects"))
     {
-        const auto& type = p["TYPE"];
-        Geom new_geom;
-        if (type == "cube")
+        const auto& objects_data = data["Objects"];
+        for (const auto& p : objects_data)
         {
-            new_geom.type = CUBE;
-        }
-        else
-        {
-            new_geom.type = SPHERE;
-        }
-        new_geom.material_id = mat_name_to_id[p["MATERIAL"]];
-        const auto& trans = p["TRANS"];
-        const auto& rotat = p["ROTAT"];
-        const auto& scale = p["SCALE"];
-        new_geom.translation = glm::vec3(trans[0], trans[1], trans[2]);
-        new_geom.rotation = glm::vec3(rotat[0], rotat[1], rotat[2]);
-        new_geom.scale = glm::vec3(scale[0], scale[1], scale[2]);
-        {
-            auto translate_mat = glm::translate(glm::mat4(1.f), new_geom.translation);
-			auto rotate_mat = glm::eulerAngleXYZ(glm::radians(new_geom.rotation.x), glm::radians(new_geom.rotation.y), glm::radians(new_geom.rotation.z));
-            auto scale_mat = glm::scale(glm::mat4(1.f), new_geom.scale);
-			new_geom.transform = translate_mat * rotate_mat * scale_mat;
-        }
-        new_geom.inverseTransform = glm::inverse(new_geom.transform);
-        new_geom.invTranspose = glm::inverseTranspose(new_geom.transform);
+            const auto& type = p["TYPE"];
+            Geom new_geom;
+            if (type == "cube")
+            {
+                new_geom.type = CUBE;
+            }
+            else
+            {
+                new_geom.type = SPHERE;
+            }
+            new_geom.material_id = mat_name_to_id[p["MATERIAL"]];
+            const auto& trans = p["TRANS"];
+            const auto& rotat = p["ROTAT"];
+            const auto& scale = p["SCALE"];
+            new_geom.translation = glm::vec3(trans[0], trans[1], trans[2]);
+            new_geom.rotation = glm::vec3(rotat[0], rotat[1], rotat[2]);
+            new_geom.scale = glm::vec3(scale[0], scale[1], scale[2]);
+            {
+                auto translate_mat = glm::translate(glm::mat4(1.f), new_geom.translation);
+    			auto rotate_mat = glm::eulerAngleXYZ(glm::radians(new_geom.rotation.x), glm::radians(new_geom.rotation.y), glm::radians(new_geom.rotation.z));
+                auto scale_mat = glm::scale(glm::mat4(1.f), new_geom.scale);
+    			new_geom.transform = translate_mat * rotate_mat * scale_mat;
+            }
+            new_geom.inverseTransform = glm::inverse(new_geom.transform);
+            new_geom.invTranspose = glm::inverseTranspose(new_geom.transform);
 
-        geoms.push_back(new_geom);
+            geoms.push_back(new_geom);
+        }
+    }
+    if (data.contains("HDRI"))
+    {
+        hdri_path = data["HDRI"].get<std::string>();
     }
     const auto& camera_data = data["Camera"];
     camera.resolution.x = camera_data["RES"][0];

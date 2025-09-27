@@ -1,4 +1,5 @@
 #include <cuda_runtime.h>
+#include <texture_types.h>
 #include <thrust/random.h>
 #include <thrust/remove.h>
 
@@ -124,11 +125,13 @@ __device__ glm::vec3 sample_f(const Material& material, const IntersectionData& 
 
 struct ShadeableIntersection;
 __global__ void shade(
-    int iter,
-    int numPaths,
-    const ShadeableIntersection* shadeableIntersections,
-    const Material* materials,
-    PathSegments path_segments)
+	int iter,
+	int numPaths,
+	const ShadeableIntersection* shadeable_intersections,
+	const Material* materials,
+	PathSegments path_segments,
+	cudaTextureObject_t hdri,
+	float exposure)
 {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -141,7 +144,7 @@ __global__ void shade(
     Ray ray = {path_segments.origins[idx], path_segments.directions[idx]};
     glm::vec3 color = path_segments.colors[idx];
     int bounces = path_segments.remaining_bounces[idx];
-    auto intersection = shadeableIntersections[idx];
+    auto intersection = shadeable_intersections[idx];
     if (intersection.t > 0.0f)
     {
         thrust::default_random_engine rng = make_seeded_random_engine(iter, idx, 0);
@@ -182,6 +185,14 @@ __global__ void shade(
     }
     else
     {
+        if (hdri)
+        {
+            glm::vec3 dir = glm::normalize(ray.direction);
+            float u = atan2(dir.z, dir.x) / (2.0f * PI) + 0.5f;
+            float v = acos(dir.y) / PI;
+            float4 hdri_color = tex2D<float4>(hdri, u, v);
+            color *= glm::vec3(hdri_color.x, hdri_color.y, hdri_color.z) * pow(2.0f, exposure);
+        }
         bounces = 0;
     }
 

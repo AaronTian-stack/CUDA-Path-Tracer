@@ -13,4 +13,5 @@ struct Scene
     Camera camera;
     std::vector<Geom> geoms;
     std::vector<Material> materials;
+    std::string hdri_path;
 };

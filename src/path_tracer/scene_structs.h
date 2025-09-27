@@ -10,11 +10,20 @@ enum DisplayMode : uint8_t
 	DENOISED,
 };
 
+enum TonemapMode : uint8_t
+{
+	NONE,
+	ACES,
+	PBR_NEUTRAL,
+};
+
 struct PathTracerSettings
 {
 	int traced_depth = 0; // This is not a setting, only for display
 	bool sort_rays = false;
 	DisplayMode display_mode = PROGRESSIVE;
+	float exposure = 0.0f;
+	TonemapMode tonemap_mode = NONE;
 };
 
 struct SceneSettings

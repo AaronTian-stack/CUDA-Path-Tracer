@@ -7,6 +7,7 @@
 #include <cuda_runtime.h>
 #include <SDL3/SDL.h>
 #include <sstream>
+#include <stb_image.h>
 #include <stb_image_write.h>
 #include <string>
 #include <vector>
@@ -33,6 +34,7 @@ void Images::init(size_t num_pixels)
 	cudaMalloc(&normal, num_pixels * sizeof(glm::vec3));
 	cudaMalloc(&in_denoise, num_pixels * sizeof(glm::vec3));
 	cudaMalloc(&out_denoise, num_pixels * sizeof(glm::vec3));
+	cudaMalloc(&tonemapped_image, num_pixels * sizeof(glm::vec3));
 }
 
 void Images::clear(size_t num_pixels)
@@ -42,6 +44,7 @@ void Images::clear(size_t num_pixels)
 	cudaMemset(accumulated_normal, 0, num_pixels * sizeof(glm::vec3));
 	cudaMemset(albedo, 0, num_pixels * sizeof(glm::vec3));
 	cudaMemset(normal, 0, num_pixels * sizeof(glm::vec3));
+	cudaMemset(tonemapped_image, 0, num_pixels * sizeof(glm::vec3));
 }
 
 Images::~Images()
@@ -53,6 +56,7 @@ Images::~Images()
 	cudaFree(normal);
 	cudaFree(in_denoise);
 	cudaFree(out_denoise);
+	cudaFree(tonemapped_image);
 }
 
 void PathTracer::reset_scene()
@@ -71,11 +75,9 @@ void PathTracer::pathtrace(const PathTracerSettings& settings, const OptiXDenois
 	const auto res_x = camera.resolution.x;
 	const auto res_y = camera.resolution.y;
 	const auto pixel_count = res_x * res_y;
-
+	
 	const dim3 block_size_2D(16, 16);
-	const dim3 blocks_per_grid_2D(
-	    (res_x + block_size_2D.x - 1) / block_size_2D.x,
-	    (res_y + block_size_2D.y - 1) / block_size_2D.y);
+	const dim3 blocks_per_grid_2D(divup(res_x, block_size_2D.x), divup(res_y, block_size_2D.y));
 
 	const int block_size_1D = 128;
 
@@ -103,7 +105,7 @@ void PathTracer::pathtrace(const PathTracerSettings& settings, const OptiXDenois
 			sort_paths_by_material(m_intersections, m_paths, num_paths);
 		}
 
-		shade_paths(block_size_1D, iteration, num_paths, m_intersections, m_materials, m_paths);
+		shade_paths(block_size_1D, iteration, num_paths, m_intersections, m_materials, m_paths, m_hdri_texture, settings.exposure);
 
 		num_paths = filter_paths_with_bounces(m_paths, num_paths);
 	}
@@ -147,8 +149,25 @@ void PathTracer::pathtrace(const PathTracerSettings& settings, const OptiXDenois
 	switch (settings.display_mode)
 	{
 	case PROGRESSIVE:
-		set_image(blocks_per_grid_2D, block_size_2D, m_interop.surf_obj, m_images.image, res_x, res_y, 1.0f / iteration);
+	{
+		glm::vec3* source_image = m_images.image;
+		const float scale = 1.0f / static_cast<float>(iteration);
+		switch (settings.tonemap_mode)
+		{
+		case ACES:
+			aces_tonemap(blocks_per_grid_2D, block_size_2D, source_image, m_images.tonemapped_image, res_x, res_y, scale);
+			set_image(blocks_per_grid_2D, block_size_2D, m_interop.surf_obj, m_images.tonemapped_image, res_x, res_y, 1.0f);
+			break;
+		case PBR_NEUTRAL:
+			pbr_neutral_tonemap(blocks_per_grid_2D, block_size_2D, source_image, m_images.tonemapped_image, res_x, res_y, scale);
+			set_image(blocks_per_grid_2D, block_size_2D, m_interop.surf_obj, m_images.tonemapped_image, res_x, res_y, 1.0f);
+			break;
+		case NONE:
+			set_image(blocks_per_grid_2D, block_size_2D, m_interop.surf_obj, source_image, res_x, res_y, scale);
+			break;
+		}
 		break;
+	}
 	case ALBEDO:
 		set_image(blocks_per_grid_2D, block_size_2D, m_interop.surf_obj, m_images.albedo, res_x, res_y, 1.0f);
 		break;
@@ -156,8 +175,25 @@ void PathTracer::pathtrace(const PathTracerSettings& settings, const OptiXDenois
 		set_image(blocks_per_grid_2D, block_size_2D, m_interop.surf_obj, m_images.normal, res_x, res_y, 1.0f);
 		break;
 	case DENOISED:
-		set_image(blocks_per_grid_2D, block_size_2D, m_interop.surf_obj, m_images.out_denoise, res_x, res_y, 1.0f);
+	{
+		glm::vec3* source_image = m_images.out_denoise;
+		constexpr float scale = 1.0f;
+		switch (settings.tonemap_mode)
+		{
+		case ACES:
+			aces_tonemap(blocks_per_grid_2D, block_size_2D, source_image, m_images.tonemapped_image, res_x, res_y, scale);
+			set_image(blocks_per_grid_2D, block_size_2D, m_interop.surf_obj, m_images.tonemapped_image, res_x, res_y, 1.0f);
+			break;
+		case PBR_NEUTRAL:
+			pbr_neutral_tonemap(blocks_per_grid_2D, block_size_2D, source_image, m_images.tonemapped_image, res_x, res_y, scale);
+			set_image(blocks_per_grid_2D, block_size_2D, m_interop.surf_obj, m_images.tonemapped_image, res_x, res_y, 1.0f);
+			break;
+		case NONE:
+			set_image(blocks_per_grid_2D, block_size_2D, m_interop.surf_obj, source_image, res_x, res_y, scale);
+			break;
+		}
 		break;
+	}
 	}
 }
 
@@ -206,6 +242,51 @@ void PathTracer::create()
 
 		cudaMalloc(&m_intersections, pixel_count * sizeof(ShadeableIntersection));
 		cudaMemset(m_intersections, 0, pixel_count * sizeof(ShadeableIntersection));
+	}
+
+	if (!m_scene.hdri_path.empty())
+	{
+		int width, height, channels;
+		float* data = stbi_loadf(m_scene.hdri_path.c_str(), &width, &height, &channels, 0);
+		if (data)
+		{
+			const auto channel_desc = cudaCreateChannelDesc<float4>();
+			cudaMallocArray(&m_hdri_data, &channel_desc, width, height);
+
+			std::vector<float4> host_data(width * height);
+			for (int i = 0; i < width * height; ++i)
+			{
+				float r = channels >= 1 ? data[i * channels] : 0.0f;
+				float g = channels >= 2 ? data[i * channels + 1] : 0.0f;
+				float b = channels >= 3 ? data[i * channels + 2] : 0.0f;
+				host_data[i] = { r, g, b, 1.0f };
+			}
+
+			cudaMemcpy2DToArray(m_hdri_data, 0, 0, host_data.data(), width * sizeof(float4), width * sizeof(float4), height, cudaMemcpyHostToDevice);
+
+			stbi_image_free(data);
+
+			cudaResourceDesc res_desc{};
+			res_desc.resType = cudaResourceTypeArray;
+			res_desc.res.array.array = m_hdri_data;
+
+			cudaTextureDesc tex_desc{};
+			tex_desc.addressMode[0] = cudaAddressModeWrap;
+			tex_desc.addressMode[1] = cudaAddressModeWrap;
+			tex_desc.filterMode = cudaFilterModeLinear;
+			tex_desc.readMode = cudaReadModeElementType;
+			tex_desc.normalizedCoords = 1;
+
+			cudaCreateTextureObject(&m_hdri_texture, &res_desc, &tex_desc, nullptr);
+		}
+#ifdef _WIN64
+		else
+		{
+			char buffer[256];
+			snprintf(buffer, sizeof(buffer), "Failed to load HDRI: %s\n", m_scene.hdri_path.c_str());
+			OutputDebugStringA(buffer);
+		}
+#endif
 	}
 
 	m_context.init_imgui(m_window, m_swapchain);
@@ -290,6 +371,14 @@ void PathTracer::render()
 		}
 	}
 
+	static float prev_exposure = m_settings.exposure;
+	if (m_settings.exposure != prev_exposure)
+	{
+		iteration = 0;
+		prev_exposure = m_settings.exposure;
+		reset_scene();
+	}
+
 	if (iteration == 0)
 	{
 		reset_scene();
@@ -314,8 +403,24 @@ void PathTracer::render()
 		{
 			// Save image
 			const auto pixel_count = res_x * res_y;
+			const dim3 block_size_2D(16, 16);
+			const dim3 blocks_per_grid_2D(divup(res_x, block_size_2D.x), divup(res_y, block_size_2D.y));
+			glm::vec3* save_image = m_images.out_denoise;
+			switch (m_settings.tonemap_mode)
+			{
+			case ACES:
+				aces_tonemap(blocks_per_grid_2D, block_size_2D, m_images.out_denoise, m_images.tonemapped_image, res_x, res_y, 1.0f);
+				save_image = m_images.tonemapped_image;
+				break;
+			case PBR_NEUTRAL:
+				pbr_neutral_tonemap(blocks_per_grid_2D, block_size_2D, m_images.out_denoise, m_images.tonemapped_image, res_x, res_y, 1.0f);
+				save_image = m_images.tonemapped_image;
+				break;
+			case NONE:
+				break;
+			}
 			std::vector<glm::vec3> host_image(pixel_count);
-			cudaMemcpy(host_image.data(), m_images.out_denoise, pixel_count * sizeof(glm::vec3), cudaMemcpyDeviceToHost);
+			cudaMemcpy(host_image.data(), save_image, pixel_count * sizeof(glm::vec3), cudaMemcpyDeviceToHost);
 
 			std::vector<unsigned char> png_data(pixel_count * 3);
 			for (size_t i = 0; i < pixel_count; ++i) {
@@ -424,6 +529,15 @@ void PathTracer::render()
 	ImGui::Combo("Display Mode", &t, "Progressive\0Albedo\0Normals\0Denoised\0\0");
 	m_settings.display_mode = static_cast<DisplayMode>(t);
 
+	int tm = m_settings.tonemap_mode;
+	ImGui::Combo("Tonemap", &tm, "None\0ACES\0PBR Neutral\0\0");
+	m_settings.tonemap_mode = static_cast<TonemapMode>(tm);
+
+	bool has_hdri = m_hdri_texture != 0;
+	ImGui::BeginDisabled(!has_hdri);
+	ImGui::SliderFloat("HDRI Exposure", &m_settings.exposure, -5.0f, 5.0f);
+	ImGui::EndDisabled();
+
 	ImGui::End();
 
 	m_context.start_render_pass(&cmd_buf, &m_swapchain, swapchain_index);
@@ -522,6 +636,15 @@ void PathTracer::destroy()
 	cudaFree(m_intersections);
 	cudaFree(m_geoms);
 	cudaFree(m_materials);
+
+	if (m_hdri_texture)
+	{
+		cudaDestroyTextureObject(m_hdri_texture);
+	}
+	if (m_hdri_data)
+	{
+		cudaFreeArray(m_hdri_data);
+	}
 
 	for (int i = 0; i < m_cuda_semaphores.size(); i++)
 	{

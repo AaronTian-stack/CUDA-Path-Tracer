@@ -2,6 +2,7 @@
 #include "optix_denoiser.h"
 #include "../application.h"
 #include <glm/glm.hpp>
+#include <texture_types.h>
 
 #include "scene.h"
 #include "scene_structs.h"
@@ -16,6 +17,7 @@ struct Images
 	glm::vec3* normal = nullptr; // Divided by iterations
 	glm::vec3* in_denoise = nullptr;
 	glm::vec3* out_denoise = nullptr;
+	glm::vec3* tonemapped_image = nullptr;
 	void init(size_t num_pixels);
 	void clear(size_t num_pixels);
 	~Images();
@@ -39,6 +41,9 @@ class PathTracer : public Application
 	ShadeableIntersection* m_intersections = nullptr;
 	Geom* m_geoms = nullptr;
 	Material* m_materials = nullptr;
+
+	cudaArray_t m_hdri_data = nullptr; // Data
+	cudaTextureObject_t m_hdri_texture = 0; // Sampler
 
 	SDL_MouseButtonFlags m_mouse_buttons = {};
 
