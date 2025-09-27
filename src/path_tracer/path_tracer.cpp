@@ -660,6 +660,12 @@ bool PathTracer::init_scene(const char* file_name)
 {
 	const bool result = m_scene.load(file_name, &m_scene_settings);
 	assert(m_scene_settings.iterations % denoise_interval == 0);
+
+	if (!m_scene.gltf_path.empty())
+	{
+		m_gltf.load(m_scene.gltf_path);
+	}
+
 	return result;
 }
 

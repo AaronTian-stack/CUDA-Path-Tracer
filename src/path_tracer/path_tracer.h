@@ -5,6 +5,7 @@
 #include <texture_types.h>
 
 #include "scene.h"
+#include "gltf_model.h"
 #include "scene_structs.h"
 #include "../vk/vk_texture.h"
 
@@ -26,18 +27,19 @@ struct Images
 class PathTracer : public Application
 {
 	Scene m_scene{};
+	
 	OptiXDenoiser m_denoiser{};
 	Images m_images{}; // CUDA pointers to row linear 2D arrays
 
 	pt::VulkanTexture m_texture{}; // CUDA is going to write to this texture
 	SceneSettings m_scene_settings{};
+	PathSegments m_paths{};
 	pt::InteropHandles m_interop{};
 	std::array<CUDASemaphore, MAX_FRAMES_IN_FLIGHT> m_cuda_semaphores{};
 	std::array<vk::CommandBuffer, MAX_FRAMES_IN_FLIGHT> m_cmd_bufs{};
 	cudaExternalSemaphore_t m_cu_semaphores[MAX_FRAMES_IN_FLIGHT]{};
 	PathTracerSettings m_settings;
-
-	PathSegments m_paths{};
+	
 	ShadeableIntersection* m_intersections = nullptr;
 	Geom* m_geoms = nullptr;
 	Material* m_materials = nullptr;
@@ -45,7 +47,7 @@ class PathTracer : public Application
 	cudaArray_t m_hdri_data = nullptr; // Data
 	cudaTextureObject_t m_hdri_texture = 0; // Sampler
 
-	SDL_MouseButtonFlags m_mouse_buttons = {};
+	pt::glTFModel m_gltf{};
 
 	static constexpr auto denoise_interval = 10;
 

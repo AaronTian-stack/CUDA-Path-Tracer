@@ -89,6 +89,10 @@ bool Scene::load(const std::string& file_name, SceneSettings* settings)
     {
         hdri_path = data["HDRI"].get<std::string>();
     }
+    if (data.contains("GLTF"))
+    {
+        gltf_path = data["GLTF"].get<std::string>();
+    }
     const auto& camera_data = data["Camera"];
     camera.resolution.x = camera_data["RES"][0];
     camera.resolution.y = camera_data["RES"][1];

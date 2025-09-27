@@ -20,6 +20,7 @@ set(SOURCES
     src/path_tracer/path_tracer.cpp
     src/path_tracer/optix_denoiser.cpp
     src/path_tracer/scene.cpp
+    src/path_tracer/gltf_model.cpp
     src/vk/vk_window.cpp
     src/vk/vk_context.cpp
     src/vk/vk_cu_interop.cpp
@@ -35,6 +36,7 @@ set(HEADERS
     src/path_tracer/path_tracer.h
     src/path_tracer/optix_denoiser.h
     src/path_tracer/scene.h
+    src/path_tracer/gltf_model.h
     src/path_tracer/scene_structs.h
     src/path_tracer/util.h
     src/vk/vk_window.h
@@ -70,6 +72,7 @@ add_executable(${PROJECT_NAME} ${SOURCES} ${HEADERS})
 
 set(scene_files
     scenes/cornell.json
+    scenes/cornell_model.json
     scenes/sphere.json
 )
 target_sources(${PROJECT_NAME} PRIVATE ${scene_files})
