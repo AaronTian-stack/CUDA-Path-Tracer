@@ -92,6 +92,14 @@ bool Scene::load(const std::string& file_name, SceneSettings* settings)
     {
         hdri_path = data["HDRI"].get<std::string>();
     }
+    if (settings)
+    {
+        if (data.contains("EXPOSURE"))
+        {
+            settings->exposure = data["EXPOSURE"].get<float>();
+        }
+    }
+
     if (data.contains("GLTF"))
     {
         gltf_path = data["GLTF"].get<std::string>();

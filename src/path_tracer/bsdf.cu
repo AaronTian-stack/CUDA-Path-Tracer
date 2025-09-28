@@ -184,7 +184,14 @@ __global__ void shade(
         {
             IntersectionData isect;
             isect.position = ray.origin + intersection.t * ray.direction;
-            isect.normal = intersection.surface_normal;
+            glm::vec3 normal = intersection.surface_normal;
+            glm::vec3 wo = -ray.direction;
+            // Assume it is a double sided material for now since no refraction
+            if (glm::dot(normal, wo) < 0)
+            {
+                normal = -normal;
+            }
+            isect.normal = normal;
             isect.uv = intersection.uv;
 
             glm::vec3 wi;
@@ -209,7 +216,7 @@ __global__ void shade(
             float u = atan2(dir.z, dir.x) / (2.0f * PI) + 0.5f;
             float v = acos(dir.y) / PI;
             float4 hdri_color = tex2D<float4>(hdri, u, v);
-            color *= glm::vec3(hdri_color.x, hdri_color.y, hdri_color.z) * pow(2.0f, exposure);
+            color *= glm::vec3(hdri_color.x, hdri_color.y, hdri_color.z) * exposure;
         }
         else
         {

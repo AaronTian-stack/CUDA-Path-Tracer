@@ -76,6 +76,7 @@ set(scene_files
     scenes/polly.json
     scenes/helmet.json
     scenes/people.json
+    scenes/robot.json
 )
 target_sources(${PROJECT_NAME} PRIVATE ${scene_files})
 

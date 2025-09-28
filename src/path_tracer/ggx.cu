@@ -31,7 +31,7 @@ __device__ float v_smith_ggx_correlated(float NdotL, float NdotV, const float al
 	float lambda_ggxv = NdotL * sqrt((-NdotV * alpha_g2 + NdotV) * NdotV + alpha_g2);
 	float lambda_ggxl = NdotV * sqrt((-NdotL * alpha_g2 + NdotL) * NdotL + alpha_g2);
 
-	return 0.5f / (lambda_ggxv + lambda_ggxl);
+	return 1.0f / (1.0f + lambda_ggxv + lambda_ggxl);
 }
 
 __device__ float d_ggx(float NdotH, float m)
@@ -50,9 +50,9 @@ __device__ glm::vec3 get_f(float LdotH, glm::vec3 f0)
 __device__ glm::vec3 get_specular(float NdotV, float NdotL, float LdotH, float NdotH, float roughness, glm::vec3 f0, glm::vec3* F)
 {
 	*F = get_f(LdotH, f0);
-	const float Vis = v_smith_ggx_correlated(NdotV, NdotL, roughness);
+	const float G = v_smith_ggx_correlated(NdotV, NdotL, roughness);
 	const float D = d_ggx(NdotH, roughness);
-	const glm::vec3 Fr = D * (*F) * Vis / PI;
+	const glm::vec3 Fr = D * (*F) * G / (4.0f * NdotV * NdotL);
 	return Fr;
 }
 

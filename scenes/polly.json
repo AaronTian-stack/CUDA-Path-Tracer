@@ -10,5 +10,6 @@
     "UP": [ 0.0, 1.0, 0.0 ]
   },
   "HDRI": "../scenes/the_sky_is_on_fire_2k.hdr",
+  "EXPOSURE":  1.8,
   "GLTF": "../scenes/polly_scene.glb"
 }

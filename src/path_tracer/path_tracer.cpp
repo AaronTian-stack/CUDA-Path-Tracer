@@ -113,7 +113,7 @@ void PathTracer::pathtrace(const PathTracerSettings& settings, const OptiXDenois
 			sort_paths_by_material(m_intersections, m_paths, num_paths);
 		}
 
-		shade_paths(block_size_1D, iteration, num_paths, m_intersections, m_materials, m_paths, m_hdri_texture, m_textures, settings.exposure);
+		shade_paths(block_size_1D, iteration, num_paths, m_intersections, m_materials, m_paths, m_hdri_texture, m_textures, m_scene_settings.exposure);
 
 		num_paths = filter_paths_with_bounces(m_paths, num_paths);
 	}
@@ -389,11 +389,11 @@ void PathTracer::render()
 		}
 	}
 
-	static float prev_exposure = m_settings.exposure;
-	if (m_settings.exposure != prev_exposure)
+	static float prev_exposure = m_scene_settings.exposure;
+	if (glm::abs(m_scene_settings.exposure - prev_exposure) > 0.01f)
 	{
 		iteration = 0;
-		prev_exposure = m_settings.exposure;
+		prev_exposure = m_scene_settings.exposure;
 		reset_scene();
 	}
 
@@ -553,7 +553,7 @@ void PathTracer::render()
 
 	bool has_hdri = m_hdri_texture != 0;
 	ImGui::BeginDisabled(!has_hdri);
-	ImGui::SliderFloat("HDRI Exposure", &m_settings.exposure, -5.0f, 5.0f);
+	ImGui::SliderFloat("HDRI Exposure", &m_scene_settings.exposure, -5.0f, 5.0f);
 	ImGui::EndDisabled();
 
 	ImGui::End();

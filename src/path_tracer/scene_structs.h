@@ -22,7 +22,6 @@ struct PathTracerSettings
 	int traced_depth = 0; // This is not a setting, only for display
 	bool sort_rays = false;
 	DisplayMode display_mode = PROGRESSIVE;
-	float exposure = 0.0f;
 	TonemapMode tonemap_mode = ACES;
 };
 
@@ -30,6 +29,7 @@ struct SceneSettings
 {
 	int iterations = 5000;
 	int trace_depth = 8;
+    float exposure = 1.0f;
 	std::string output_name;
 };
 
