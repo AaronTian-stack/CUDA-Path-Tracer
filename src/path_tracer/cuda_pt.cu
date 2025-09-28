@@ -308,6 +308,7 @@ __global__ void compute_gltf_intersections_kernel(int num_paths, PathSegments pa
         int pos_accessor_idx = prim.position_accessor;
         int norm_accessor_idx = prim.normal_accessor;
         int texcoord_accessor_idx = prim.texcoord_accessor;
+        int tangent_accessor_idx = prim.tangent_accessor;
 
         if (pos_accessor_idx == -1)
         {
@@ -355,6 +356,22 @@ __global__ void compute_gltf_intersections_kernel(int num_paths, PathSegments pa
             texcoord_offset = texcoord_acc.offset + texcoord_bv.offset;
             texcoord_stride = texcoord_bv.stride;
             if (texcoord_stride == 0) texcoord_stride = 2 * sizeof(float);
+        }
+
+        // Tangents
+        pt::glTFModel::Accessor tangent_acc;
+        pt::glTFModel::BufferView tangent_bv;
+        void* tangent_buffer = nullptr;
+        size_t tangent_offset = 0;
+        size_t tangent_stride = 0;
+        if (tangent_accessor_idx != -1) 
+        {
+            tangent_acc = d_accessors[tangent_accessor_idx];
+            tangent_bv = d_buffer_views[tangent_acc.buffer_view];
+            tangent_buffer = d_cu_buffers[tangent_bv.buffer_index];
+            tangent_offset = tangent_acc.offset + tangent_bv.offset;
+            tangent_stride = tangent_bv.stride;
+            if (tangent_stride == 0) tangent_stride = 4 * sizeof(float);
         }
 
 #ifdef ENABLE_AABB_CULLING
@@ -411,6 +428,16 @@ __global__ void compute_gltf_intersections_kernel(int num_paths, PathSegments pa
                 uv2 = *reinterpret_cast<glm::vec2*>(static_cast<uint8_t*>(texcoord_buffer) + texcoord_offset + i2 * texcoord_stride);
             }
 
+            glm::vec4 t0, t1, t2;
+            t0 = t1 = t2 = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f); // Default tangent
+
+            if (tangent_accessor_idx != -1) 
+            {
+                t0 = *reinterpret_cast<glm::vec4*>(static_cast<uint8_t*>(tangent_buffer) + tangent_offset + i0 * tangent_stride);
+                t1 = *reinterpret_cast<glm::vec4*>(static_cast<uint8_t*>(tangent_buffer) + tangent_offset + i1 * tangent_stride);
+                t2 = *reinterpret_cast<glm::vec4*>(static_cast<uint8_t*>(tangent_buffer) + tangent_offset + i2 * tangent_stride);
+            }
+
             glm::vec2 bary;
             float t = triangle_intersect(local_ray, v0, v1, v2, bary);
             if (t > 0.0f && t < closest_t)
@@ -422,6 +449,10 @@ __global__ void compute_gltf_intersections_kernel(int num_paths, PathSegments pa
                 inter.surface_normal = glm::normalize(normal_matrix * local_normal);
                 inter.material_id = prim.material_index;
                 inter.uv = bary.x * uv1 + bary.y * uv2 + (1.0f - bary.x - bary.y) * uv0;
+                inter.tangent = bary.x * t1 + bary.y * t2 + (1.0f - bary.x - bary.y) * t0;
+                // Transform tangent to world space
+                glm::vec3 local_tangent = glm::vec3(inter.tangent);
+                inter.tangent = glm::vec4(glm::normalize(normal_matrix * local_tangent), inter.tangent.w);
             }
         }
     }

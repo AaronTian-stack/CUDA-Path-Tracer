@@ -112,4 +112,5 @@ struct ShadeableIntersection
 	glm::vec3 surface_normal;
 	int material_id;
 	glm::vec2 uv;
+	glm::vec4 tangent;
 };

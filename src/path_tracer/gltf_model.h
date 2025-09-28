@@ -54,6 +54,7 @@ namespace pt
 			int position_accessor = -1;
 			int normal_accessor = -1;
 			int texcoord_accessor = -1;
+			int tangent_accessor = -1;
 			AABB aabb;
 		};
 		Primitive* d_primitives = nullptr;

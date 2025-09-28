@@ -191,8 +191,26 @@ __global__ void shade(
             {
                 normal = -normal;
             }
-            isect.normal = normal;
             isect.uv = intersection.uv;
+
+            // Normal mapping
+            // Note: Tangent vectors exported from Blender are WRONG, at least for DamagedHelmet.glb
+            // Normally they can be generated using mikktspace library, but I don't want to do that here
+            if (textures && material.normal.index >= 0)
+            {
+                float4 normal_tex = tex2D<float4>(textures[material.normal.index], intersection.uv.x, intersection.uv.y);
+                glm::vec3 normal_map = glm::vec3(normal_tex.x, normal_tex.y, normal_tex.z) * 2.0f - 1.0f;
+                normal_map *= material.normal.scale;
+
+                glm::vec3 T = glm::vec3(intersection.tangent);
+                float handedness = intersection.tangent.w;
+                glm::vec3 B = glm::cross(normal, T) * handedness;
+                glm::mat3 TBN = glm::mat3(T, B, normal);
+
+                normal = glm::normalize(TBN * normal_map);
+            }
+
+            isect.normal = normal;
 
             glm::vec3 wi;
             float pdf;
@@ -216,7 +234,7 @@ __global__ void shade(
             float u = atan2(dir.z, dir.x) / (2.0f * PI) + 0.5f;
             float v = acos(dir.y) / PI;
             float4 hdri_color = tex2D<float4>(hdri, u, v);
-            color *= glm::vec3(hdri_color.x, hdri_color.y, hdri_color.z) * exposure;
+            color *= glm::vec3(hdri_color.x, hdri_color.y, hdri_color.z) * pow(2.0f, exposure);
         }
         else
         {

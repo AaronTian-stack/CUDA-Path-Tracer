@@ -2,14 +2,14 @@
   "Camera": {
     "RES": [ 800, 800 ],
     "FOVY": 45.0,
-    "ITERATIONS": 100,
-    "DEPTH": 8,
-    "FILE": "robot",
+    "ITERATIONS": 1000,
+    "DEPTH": 3,
+    "FILE": "normal_map",
     "EYE": [ 0.0, 2.0, 3.0 ],
     "LOOKAT": [ 0.0, 2.0, 0.0 ],
     "UP": [ 0.0, 1.0, 0.0 ]
   },
   "HDRI": "../scenes/the_sky_is_on_fire_2k.hdr",
-  "EXPOSURE":  2.5,
-  "GLTF": "../scenes/robot.glb"
+  "EXPOSURE":  2.0,
+  "GLTF": "../scenes/NormalTangentTest.glb"
 }

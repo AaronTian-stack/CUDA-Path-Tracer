@@ -151,6 +151,7 @@ bool process_meshes(const tinygltf::Model& tiny_model, pt::glTFModel* model)
 		if (prim.attributes.count("POSITION")) p.position_accessor = prim.attributes.at("POSITION");
 		if (prim.attributes.count("NORMAL")) p.normal_accessor = prim.attributes.at("NORMAL");
 		if (prim.attributes.count("TEXCOORD_0")) p.texcoord_accessor = prim.attributes.at("TEXCOORD_0");
+		if (prim.attributes.count("TANGENT")) p.tangent_accessor = prim.attributes.at("TANGENT");
 
 		// Compute AABB
 		if (p.position_accessor != -1)
