@@ -121,6 +121,9 @@ bool Scene::load(const std::string& file_name, SceneSettings* settings)
     camera.look_at = glm::vec3(lookat[0], lookat[1], lookat[2]);
     camera.up = glm::vec3(up[0], up[1], up[2]);
 
+    camera.focus_distance = camera_data.contains("FOCUS_DISTANCE") ? camera_data["FOCUS_DISTANCE"].get<float>() : glm::distance(camera.position, camera.look_at);
+    camera.defocus_angle = camera_data.contains("DEFOCUS_ANGLE") ? camera_data["DEFOCUS_ANGLE"].get<float>() : 0.f;
+
     camera.set_target_distance(glm::distance(camera.position, camera.look_at));
 
     //calculate fov based on resolution

@@ -40,26 +40,54 @@ void test_set_image(cudaSurfaceObject_t surf_obj, size_t width, size_t height, f
     set_image_uv<<<grid, block>>>(surf_obj, width, height, time);
 }
 
+__device__ inline glm::vec3 random_in_unit_disk(glm::vec2 sample)
+{
+    float r = sqrt(sample.x);
+    float theta = 2.0f * PI * sample.y;
+    return glm::vec3(r * cos(theta), r * sin(theta), 0);
+}
+
 __global__ void generate_ray_from_camera(Camera cam, int iter, int traceDepth, PathSegments path_segments)
 {
     int x = (blockIdx.x * blockDim.x) + threadIdx.x;
     int y = (blockIdx.y * blockDim.y) + threadIdx.y;
 
-    if (x < cam.resolution.x && y < cam.resolution.y) {
+    if (x < cam.resolution.x && y < cam.resolution.y)
+    {
         int index = x + (y * cam.resolution.x);
 
-        path_segments.origins[index] = cam.position;
-        path_segments.colors[index] = glm::vec3(1.0f, 1.0f, 1.0f);
-
-        thrust::default_random_engine rng = make_seeded_random_engine(iter, 0, traceDepth);
+        thrust::default_random_engine rng = make_seeded_random_engine(iter, index, traceDepth);
         thrust::uniform_real_distribution<float> u01(0, 1);
 
         // Antialiasing by jittering the ray
-        path_segments.directions[index] = glm::normalize(cam.view
+        glm::vec3 pixel_dir = glm::normalize(cam.view
             - cam.right * cam.pixel_length.x * (static_cast<float>(x) - static_cast<float>(cam.resolution.x) * 0.5f + u01(rng))
             - cam.up * cam.pixel_length.y * (static_cast<float>(y) - static_cast<float>(cam.resolution.y) * 0.5f + u01(rng))
         );
 
+        glm::vec3 origin = cam.position;
+        glm::vec3 direction = pixel_dir;
+
+        if (cam.defocus_angle > 0.0f)
+        {
+            // Depth of field thin lens model
+            // https://raytracing.github.io/books/RayTracingInOneWeekend.html#defocusblur
+            float defocus_radius = cam.focus_distance * tan(glm::radians(cam.defocus_angle / 2.0f));
+            glm::vec3 defocus_disk_u = cam.right * defocus_radius;
+            glm::vec3 defocus_disk_v = cam.up * defocus_radius;
+
+            glm::vec2 rd_sample = glm::vec2(u01(rng), u01(rng));
+            glm::vec3 rd = random_in_unit_disk(rd_sample);
+            glm::vec3 offset = rd.x * defocus_disk_u + rd.y * defocus_disk_v;
+
+            origin = cam.position + offset;
+            glm::vec3 point_on_focal_plane = cam.position + cam.focus_distance * pixel_dir;
+            direction = glm::normalize(point_on_focal_plane - origin);
+        }
+
+        path_segments.origins[index] = origin;
+        path_segments.colors[index] = glm::vec3(1.0f, 1.0f, 1.0f);
+        path_segments.directions[index] = direction;
         path_segments.pixel_indices[index] = index;
         path_segments.remaining_bounces[index] = traceDepth;
     }
@@ -375,7 +403,6 @@ __global__ void compute_gltf_intersections_kernel(int num_paths, PathSegments pa
         }
 
 #ifdef ENABLE_AABB_CULLING
-        // AABB culling
         if (ray_aabb_intersect(local_ray, prim.aabb.min, prim.aabb.max) < 0.0f)
         {
             continue;

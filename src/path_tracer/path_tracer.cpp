@@ -125,7 +125,7 @@ void PathTracer::pathtrace(const PathTracerSettings& settings, const OptiXDenois
 	normalize_albedo_normal(blocks_per_grid_2D, block_size_2D,
 		camera.resolution, iteration, m_images.accumulated_albedo, m_images.accumulated_normal, m_images.albedo, m_images.normal);
 
-	if ( (settings.display_mode == DENOISED && iteration % interval_to_denoise == 0) || (iteration >= m_scene_settings.iterations - 1) )
+	if ((settings.display_mode == DENOISED && iteration % interval_to_denoise == 0) || iteration >= m_scene_settings.iterations - 1)
 	{
 		average_image_for_denoise(blocks_per_grid_2D, block_size_2D, m_images.image, camera.resolution, iteration, m_images.in_denoise);
 
@@ -555,6 +555,15 @@ void PathTracer::render()
 	ImGui::BeginDisabled(!has_hdri);
 	ImGui::SliderFloat("HDRI Exposure", &m_scene_settings.exposure, -5.0f, 5.0f);
 	ImGui::EndDisabled();
+
+	if (ImGui::DragFloat("Focus Distance", &m_scene.camera.focus_distance, 0.01f))
+	{
+		iteration = 0;
+	}
+	if (ImGui::DragFloat("Defocus Angle", &m_scene.camera.defocus_angle, 0.01f))
+	{
+		iteration = 0;
+	}
 
 	ImGui::End();
 

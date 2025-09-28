@@ -62,74 +62,74 @@ __device__ glm::vec3 sample_f(const Material& material, const IntersectionData& 
     const float roughness = material.metallic_roughness.roughness_factor;
     const float metallic = material.metallic_roughness.metallic_factor;
 
-	float ggx_pdf = 0;
-	float diffuse_pdf = 0;
-	if (xi.z < metallic)
-	{
-	    if (roughness == 0)
-	    {
-	        *wiW = reflect(-woW, N);
-	        ggx_pdf = 1.f;
-	        diffuse_pdf = 0.f;
-	    }
-	    else
-	    {
-	        auto wo = world_to_local(N) * woW;
-	        if (wo.z == 0) return glm::vec3(0.);
+    float ggx_pdf = 0;
+    float diffuse_pdf = 0;
+    if (xi.z < metallic)
+    {
+        if (roughness == 0)
+        {
+	    *wiW = reflect(-woW, N);
+	    ggx_pdf = 1.f;
+	    diffuse_pdf = 0.f;
+        }
+        else
+        {
+	    auto wo = world_to_local(N) * woW;
+	    if (wo.z == 0) return glm::vec3(0.);
 
-	        glm::vec3 wh = sample_wh(wo, glm::vec2(xi), roughness);
-	        if (glm::abs(glm::dot(wo, wh)) < 1e-6f) return glm::vec3(0.f);
-	        glm::vec3 wi = reflect(-wo, wh);
-	        *wiW = local_to_world(N) * wi;
-	        diffuse_pdf = square_to_hemisphere_cosine_pdf(wi);
-	        if (!same_hemisphere(wo, wi)) return glm::vec3(0.f);
-	        ggx_pdf = trowbridge_reitz_pdf(wo, wh, roughness) / (4 * glm::dot(wo, wh));
-	    }
-	}
-	else
-	{
-	    // Diffuse Sample
-	    *wiW = square_to_hemisphere_cosine(glm::vec2(xi));
-	    // TODO: I think ggx_pdf is wrong here but it looks ok I guess
-	    diffuse_pdf = square_to_hemisphere_cosine_pdf(*wiW);
-	    *wiW = local_to_world(N) * *wiW;
-	}
+	    glm::vec3 wh = sample_wh(wo, glm::vec2(xi), roughness);
+	    if (glm::abs(glm::dot(wo, wh)) < 1e-6f) return glm::vec3(0.f);
+	    glm::vec3 wi = reflect(-wo, wh);
+	    *wiW = local_to_world(N) * wi;
+	    diffuse_pdf = square_to_hemisphere_cosine_pdf(wi);
+	    if (!same_hemisphere(wo, wi)) return glm::vec3(0.f);
+	    ggx_pdf = trowbridge_reitz_pdf(wo, wh, roughness) / (4 * glm::dot(wo, wh));
+        }
+    }
+    else
+    {
+        // Diffuse Sample
+        *wiW = square_to_hemisphere_cosine(glm::vec2(xi));
+        // TODO: I think ggx_pdf is wrong here but it looks ok I guess
+        diffuse_pdf = square_to_hemisphere_cosine_pdf(*wiW);
+        *wiW = local_to_world(N) * *wiW;
+    }
 
-	*pdf = metallic * ggx_pdf + (1.f - metallic) * diffuse_pdf;
+    *pdf = metallic * ggx_pdf + (1.f - metallic) * diffuse_pdf;
 
-	const auto& L = *wiW;
+    const auto& L = *wiW;
 
-	glm::vec3 F0 = glm::mix(glm::vec3(0.04f), albedo, glm::vec3(metallic));
+    glm::vec3 F0 = glm::mix(glm::vec3(0.04f), albedo, glm::vec3(metallic));
 
-	const glm::vec3	H = glm::normalize(L + V);
-	const float	NdotV = abs(dot(N, V)) + 1e-5f;
-	const float NdotL = glm::max(0.f, dot(L, N));
-	if (NdotL <= 0.f) return glm::vec3(0.f);
-	const float LdotH = glm::max(0.f, dot(L, H));
-	const float	NdotH = glm::max(0.f, dot(H, N));
+    const glm::vec3	H = glm::normalize(L + V);
+    const float	NdotV = abs(dot(N, V)) + 1e-5f;
+    const float NdotL = glm::max(0.f, dot(L, N));
+    if (NdotL <= 0.f) return glm::vec3(0.f);
+    const float LdotH = glm::max(0.f, dot(L, H));
+    const float	NdotH = glm::max(0.f, dot(H, N));
 
-	glm::vec3 F;
-	glm::vec3 specular = get_specular(NdotV, NdotL, LdotH, NdotH, roughness, F0, &F);
+    glm::vec3 F;
+    glm::vec3 specular = get_specular(NdotV, NdotL, LdotH, NdotH, roughness, F0, &F);
 
-	// Otherwise dividing by roughness in GGX which results in a NaN
-	if (roughness == 0.f)
-	{
-	    float NdotL_spec = glm::max(0.f, dot(N, *wiW));
-	    if (NdotL_spec > 0.f)
-	    {
-	        specular = F / NdotL_spec;
-	    }
-	    else
-	    {
-	        specular = glm::vec3(0.f);
-	    }
-	}
+    // Otherwise dividing by roughness in GGX which results in a NaN
+    if (roughness == 0.f)
+    {
+        float NdotL_spec = glm::max(0.f, dot(N, *wiW));
+        if (NdotL_spec > 0.f)
+        {
+	    specular = F / NdotL_spec;
+        }
+        else
+        {
+	    specular = glm::vec3(0.f);
+        }
+    }
 
-	float Fd = fr_disney_diffuse(NdotV, NdotL, LdotH, roughness);
-	glm::vec3 kD = (glm::vec3(1.f) - F) * (1.f - metallic);
-	glm::vec3 diffuse = kD * (albedo * Fd / PI);
+    float Fd = fr_disney_diffuse(NdotV, NdotL, LdotH, roughness);
+    glm::vec3 kD = (glm::vec3(1.f) - F) * (1.f - metallic);
+    glm::vec3 diffuse = kD * (albedo * Fd / PI);
 
-	return diffuse + specular;
+    return diffuse + specular;
 }
 
 struct ShadeableIntersection;
@@ -187,7 +187,7 @@ __global__ void shade(
             glm::vec3 normal = intersection.surface_normal;
             glm::vec3 wo = -ray.direction;
             // Assume it is a double sided material for now since no refraction
-            if (glm::dot(normal, wo) < 0)
+            if (glm::dot(normal, wo) < 0.f)
             {
                 normal = -normal;
             }

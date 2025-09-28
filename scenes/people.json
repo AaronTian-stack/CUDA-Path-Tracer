@@ -7,7 +7,9 @@
     "FILE": "people",
     "EYE": [ 0.0, 2.0, 3.0 ],
     "LOOKAT": [ 0.0, 2.0, 0.0 ],
-    "UP": [ 0.0, 1.0, 0.0 ]
+    "UP": [ 0.0, 1.0, 0.0 ],
+    "FOCUS_DISTANCE": 9.0,
+    "DEFOCUS_ANGLE": 0.7
   },
   "GLTF": "../scenes/people.glb"
 }

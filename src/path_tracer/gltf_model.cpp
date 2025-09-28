@@ -133,7 +133,6 @@ void process_accessor_views(const tinygltf::Model& tiny_model, pt::glTFModel* mo
 
 bool process_meshes(const tinygltf::Model& tiny_model, pt::glTFModel* model)
 {
-	//model->meshes.reserve(tiny_model.meshes.size());
 	cudaMalloc(reinterpret_cast<void**>(&model->d_primitives), sizeof(pt::glTFModel::Primitive) * tiny_model.meshes.size());
 	for (int i = 0; i < tiny_model.meshes.size(); i++)
 	{
