@@ -164,6 +164,13 @@ __global__ void compute_intersections(int num_paths, PathSegments path_segments,
 
     if (path_index < num_paths)
     {
+#ifdef DISABLE_STREAM_COMPACTION
+        if (path_segments.remaining_bounces[path_index] <= 0)
+        {
+            return;
+        }
+#endif
+
         Ray ray = {path_segments.origins[path_index], path_segments.directions[path_index]};
 
         float t;
@@ -297,6 +304,13 @@ __global__ void compute_gltf_intersections_kernel(int num_paths, PathSegments pa
 {
     int path_index = blockIdx.x * blockDim.x + threadIdx.x;
     if (path_index >= num_paths) return;
+
+#ifdef DISABLE_STREAM_COMPACTION
+    if (path_segments.remaining_bounces[path_index] <= 0)
+    {
+        return;
+    }
+#endif
 
     Ray ray = {path_segments.origins[path_index], path_segments.directions[path_index]};
     ShadeableIntersection inter;
@@ -498,6 +512,9 @@ __global__ void final_gather_kernel(int initial_num_paths, glm::vec3* image, Pat
 {
     int index = blockIdx.x * blockDim.x + threadIdx.x;
     if (index >= initial_num_paths) return;
+#ifdef DISABLE_STREAM_COMPACTION
+    if (path_segments.remaining_bounces[index] > 0) return;
+#endif
     image[path_segments.pixel_indices[index]] += path_segments.colors[index];
 }
 

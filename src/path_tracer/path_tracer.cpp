@@ -85,6 +85,35 @@ void PathTracer::pathtrace(const PathTracerSettings& settings, const OptiXDenois
 
 	const dim3 num_blocks_pixels = divup(pixel_count, block_size_1D);
 
+#ifdef DISABLE_STREAM_COMPACTION
+	int depth = 0;
+	for (int d = 0; d < m_scene_settings.trace_depth; d++)
+	{
+		depth = d;
+		auto num_paths = pixel_count;
+
+		cudaMemset(m_intersections, 0, pixel_count * sizeof(ShadeableIntersection));
+
+		// Exclusively glTF or default geometry
+		if (m_gltf.d_primitives)
+		{
+			compute_gltf_intersections(block_size_1D, num_paths, m_paths, m_gltf.d_nodes, m_gltf.num_nodes, m_gltf.d_primitives, m_gltf.d_accessors, m_gltf.d_buffer_views, m_gltf.d_buffers, m_intersections);
+		}
+		else
+		{
+			compute_intersections(block_size_1D, depth, num_paths, m_paths, m_geoms, static_cast<int>(m_scene.geoms.size()), m_intersections);
+		}
+		
+		if (depth == 0)
+		{
+			accumulate_albedo_normal(num_blocks_pixels, block_size_1D,
+				pixel_count, m_intersections, m_materials, m_images.accumulated_albedo, m_images.accumulated_normal);
+		}
+
+		shade_paths(block_size_1D, iteration, num_paths, m_intersections, m_materials, m_paths, m_hdri_texture, m_textures, m_scene_settings.exposure);
+	}
+	m_settings.traced_depth = depth + 1;
+#else
 	int depth = 0;
 	auto num_paths = pixel_count;
 
@@ -118,6 +147,7 @@ void PathTracer::pathtrace(const PathTracerSettings& settings, const OptiXDenois
 		num_paths = filter_paths_with_bounces(m_paths, num_paths);
 	}
 	m_settings.traced_depth = depth;
+#endif
 
 	// Assemble this iteration and apply it to the image
 	final_gather(block_size_1D, pixel_count, m_images.image, m_paths);

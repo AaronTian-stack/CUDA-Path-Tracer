@@ -150,6 +150,13 @@ __global__ void shade(
         return;
     }
 
+#ifdef DISABLE_STREAM_COMPACTION
+    if (path_segments.remaining_bounces[idx] <= 0)
+    {
+        return;
+    }
+#endif
+
     // Reconstruct ray and color
     Ray ray = {path_segments.origins[idx], path_segments.directions[idx]};
     glm::vec3 color = path_segments.colors[idx];
@@ -219,6 +226,10 @@ __global__ void shade(
 
             ray = spawn_ray(isect.position, wi);
             bounces--;
+            if (bounces == 0)
+            {
+                color = glm::vec3(0.f);
+            }
 
             if (pdf != 0)
             {
