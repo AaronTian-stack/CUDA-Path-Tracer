@@ -125,7 +125,7 @@ void PathTracer::pathtrace(const PathTracerSettings& settings, const OptiXDenois
 	normalize_albedo_normal(blocks_per_grid_2D, block_size_2D,
 		camera.resolution, iteration, m_images.accumulated_albedo, m_images.accumulated_normal, m_images.albedo, m_images.normal);
 
-	if (iteration % interval_to_denoise == 0)
+	if ( (settings.display_mode == DENOISED && iteration % interval_to_denoise == 0) || (iteration >= m_scene_settings.iterations - 1) )
 	{
 		average_image_for_denoise(blocks_per_grid_2D, block_size_2D, m_images.image, camera.resolution, iteration, m_images.in_denoise);
 
