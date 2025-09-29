@@ -1,5 +1,6 @@
 ﻿#include "path_tracer.h"
 
+#include <chrono>
 #include <csignal>
 #include <ctime>
 #include <imgui.h>
@@ -347,6 +348,7 @@ void PathTracer::create()
 void PathTracer::render()
 {
 	static int iteration = 0;
+	static auto start_time = std::chrono::high_resolution_clock::now();
 
 	glm::vec2 mouse_position;
 	static glm::vec2 mouse_delta{};
@@ -430,6 +432,7 @@ void PathTracer::render()
 	if (iteration == 0)
 	{
 		reset_scene();
+		start_time = std::chrono::high_resolution_clock::now();
 	}
 
 	const auto& camera = m_scene.camera;
@@ -449,6 +452,10 @@ void PathTracer::render()
 
 		if (iteration >= m_scene_settings.iterations)
 		{
+			auto end_time = std::chrono::high_resolution_clock::now();
+			std::chrono::duration<double> elapsed = end_time - start_time;
+			printf("Render time: %.2f seconds\n", elapsed.count());
+
 			// Save image
 			const auto pixel_count = res_x * res_y;
 			const dim3 block_size_2D(16, 16);
