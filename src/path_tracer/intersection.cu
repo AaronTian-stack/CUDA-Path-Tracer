@@ -15,8 +15,8 @@ __host__ __device__ float box_intersection_test(
     q.origin = multiply_mv(box.inverseTransform, glm::vec4(r.origin, 1.0f));
     q.direction = glm::normalize(multiply_mv(box.inverseTransform, glm::vec4(r.direction, 0.0f)));
 
-    float tmin = -1e38f;
-    float tmax = 1e38f;
+    float t_min = -1e38f;
+    float t_max = 1e38f;
     glm::vec3 tmin_n;
     glm::vec3 tmax_n;
     for (int xyz = 0; xyz < 3; ++xyz)
@@ -29,36 +29,36 @@ __host__ __device__ float box_intersection_test(
             float ta = glm::min(t1, t2);
             float tb = glm::max(t1, t2);
             glm::vec3 n;
-            n[xyz] = t2 < t1 ? 1.f : -1.f;
-            if (ta > 0 && ta > tmin)
+            n[xyz] = t2 < t1 ? 1.0f : -1.0f;
+            if (ta > 0 && ta > t_min)
             {
-                tmin = ta;
+                t_min = ta;
                 tmin_n = n;
             }
-            if (tb < tmax)
+            if (tb < t_max)
             {
-                tmax = tb;
+                t_max = tb;
                 tmax_n = n;
             }
         }
     }
 
-    if (tmax >= tmin && tmax > 0.f)
+    if (t_max >= t_min && t_max > 0.0f)
     {
         outside = true;
-        if (tmin <= 0)
+        if (t_min <= 0)
         {
-            tmin = tmax;
+            t_min = t_max;
             tmin_n = tmax_n;
             outside = false;
         }
-        intersectionPoint = multiply_mv(box.transform, glm::vec4(get_point_on_ray(q, tmin), 1.0f));
+        intersectionPoint = multiply_mv(box.transform, glm::vec4(get_point_on_ray(q, t_min), 1.0f));
         normal = glm::normalize(multiply_mv(box.invTranspose, glm::vec4(tmin_n, 0.0f)));
 
         return glm::length(r.origin - intersectionPoint);
     }
 
-    return -1.f;
+    return -1.0f;
 }
 
 __host__ __device__ float sphere_intersection_test(
@@ -77,38 +77,38 @@ __host__ __device__ float sphere_intersection_test(
     rt.origin = ro;
     rt.direction = rd;
 
-    float vDotDirection = glm::dot(rt.origin, rt.direction);
-    float radicand = vDotDirection * vDotDirection - (glm::dot(rt.origin, rt.origin) - powf(radius, 2));
-    if (radicand < 0.f)
+    float v_dot_direction = glm::dot(rt.origin, rt.direction);
+    float radicand = v_dot_direction * v_dot_direction - (glm::dot(rt.origin, rt.origin) - powf(radius, 2));
+    if (radicand < 0.0f)
     {
         return -1;
     }
 
-    float squareRoot = sqrt(radicand);
-    float firstTerm = -vDotDirection;
-    float t1 = firstTerm + squareRoot;
-    float t2 = firstTerm - squareRoot;
+    float square_root = sqrt(radicand);
+    float first_term = -v_dot_direction;
+    float t1 = first_term + square_root;
+    float t2 = first_term - square_root;
 
     float t = 0;
     if (t1 < 0 && t2 < 0)
     {
         return -1;
     }
-    else if (t1 > 0 && t2 > 0)
+    if (t1 > 0 && t2 > 0)
     {
-        t = min(t1, t2);
-        outside = true;
+	    t = min(t1, t2);
+	    outside = true;
     }
     else
     {
-        t = max(t1, t2);
-        outside = false;
+	    t = max(t1, t2);
+	    outside = false;
     }
 
-    glm::vec3 objspaceIntersection = get_point_on_ray(rt, t);
+    glm::vec3 objspace_intersection = get_point_on_ray(rt, t);
 
-    intersectionPoint = multiply_mv(sphere.transform, glm::vec4(objspaceIntersection, 1.f));
-    normal = glm::normalize(multiply_mv(sphere.invTranspose, glm::vec4(objspaceIntersection, 0.f)));
+    intersectionPoint = multiply_mv(sphere.transform, glm::vec4(objspace_intersection, 1.0f));
+    normal = glm::normalize(multiply_mv(sphere.invTranspose, glm::vec4(objspace_intersection, 0.0f)));
 
     return glm::length(r.origin - intersectionPoint);
 }

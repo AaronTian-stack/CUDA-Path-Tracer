@@ -40,6 +40,7 @@ void test_set_image(cudaSurfaceObject_t surf_obj, size_t width, size_t height, f
     set_image_uv<<<grid, block>>>(surf_obj, width, height, time);
 }
 
+// From CIS 5610 / Pbrt
 __device__ inline glm::vec3 random_in_unit_disk(glm::vec2 sample)
 {
     float r = sqrt(sample.x);
@@ -619,11 +620,11 @@ __global__ void pbr_neutral_tonemap_kernel(glm::vec3* input, glm::vec3* output, 
     }
 
     const float d = 1.0f - start_compression;
-    float newPeak = 1.0f - d * d / (peak + d - start_compression);
-    color *= newPeak / peak;
+    const float new_peak = 1.0f - d * d / (peak + d - start_compression);
+    color *= new_peak / peak;
 
-    float g = 1.0f - 1.0f / (desaturation * (peak - newPeak) + 1.0f);
-    color = glm::mix(color, newPeak * glm::vec3(1.0f, 1.0f, 1.0f), g);
+    float g = 1.0f - 1.0f / (desaturation * (peak - new_peak) + 1.0f);
+    color = glm::mix(color, new_peak * glm::vec3(1.0f, 1.0f, 1.0f), g);
     output[index] = glm::clamp(color, 0.0f, 1.0f);
 }
 

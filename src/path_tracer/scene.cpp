@@ -33,7 +33,7 @@ bool Scene::load(const std::string& file_name, SceneSettings* settings)
             if (p["TYPE"] == "Diffuse")
             {
                 const auto& col = p["RGB"];
-                new_material.base_color.factor = glm::vec4(col[0], col[1], col[2], 1.f);
+                new_material.base_color.factor = glm::vec4(col[0], col[1], col[2], 1.0f);
                 new_material.metallic_roughness.roughness_factor = 1.0f;
                 new_material.metallic_roughness.metallic_factor = 0.0f;
             }
@@ -47,8 +47,8 @@ bool Scene::load(const std::string& file_name, SceneSettings* settings)
             {
                 const auto& col = p["RGB"];
                 new_material.base_color.factor = glm::vec4(col[0], col[1], col[2], 1.0f);
-                new_material.metallic_roughness.roughness_factor = p.contains("ROUGHNESS") ? static_cast<float>(p["ROUGHNESS"]) : 0.f;
-                new_material.metallic_roughness.metallic_factor = p.contains("METALLIC") ? static_cast<float>(p["METALLIC"]) : 0.f;
+                new_material.metallic_roughness.roughness_factor = p.contains("ROUGHNESS") ? static_cast<float>(p["ROUGHNESS"]) : 0.0f;
+                new_material.metallic_roughness.metallic_factor = p.contains("METALLIC") ? static_cast<float>(p["METALLIC"]) : 0.0f;
             }
             mat_name_to_id[name] = materials.size();
             materials.emplace_back(new_material);
@@ -77,9 +77,9 @@ bool Scene::load(const std::string& file_name, SceneSettings* settings)
             new_geom.rotation = glm::vec3(rotat[0], rotat[1], rotat[2]);
             new_geom.scale = glm::vec3(scale[0], scale[1], scale[2]);
             {
-                auto translate_mat = glm::translate(glm::mat4(1.f), new_geom.translation);
+                auto translate_mat = glm::translate(glm::mat4(1.0f), new_geom.translation);
     			auto rotate_mat = glm::eulerAngleXYZ(glm::radians(new_geom.rotation.x), glm::radians(new_geom.rotation.y), glm::radians(new_geom.rotation.z));
-                auto scale_mat = glm::scale(glm::mat4(1.f), new_geom.scale);
+                auto scale_mat = glm::scale(glm::mat4(1.0f), new_geom.scale);
     			new_geom.transform = translate_mat * rotate_mat * scale_mat;
             }
             new_geom.inverseTransform = glm::inverse(new_geom.transform);
@@ -122,7 +122,7 @@ bool Scene::load(const std::string& file_name, SceneSettings* settings)
     camera.up = glm::vec3(up[0], up[1], up[2]);
 
     camera.focus_distance = camera_data.contains("FOCUS_DISTANCE") ? camera_data["FOCUS_DISTANCE"].get<float>() : glm::distance(camera.position, camera.look_at);
-    camera.defocus_angle = camera_data.contains("DEFOCUS_ANGLE") ? camera_data["DEFOCUS_ANGLE"].get<float>() : 0.f;
+    camera.defocus_angle = camera_data.contains("DEFOCUS_ANGLE") ? camera_data["DEFOCUS_ANGLE"].get<float>() : 0.0f;
 
     camera.set_target_distance(glm::distance(camera.position, camera.look_at));
 

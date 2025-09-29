@@ -13,10 +13,10 @@
 
 __device__ glm::vec3 square_to_hemisphere_cosine(const glm::vec2& xi)
 {
-    float r = glm::sqrt(xi.x);
-    float theta = 2.0 * PI * xi.y;
-    glm::vec2 disk = glm::vec2(r * cos(theta), r * sin(theta));
-    return glm::vec3(disk.x, disk.y, glm::max(0.f, glm::sqrt(1.f - dot(disk, disk))));
+    const float r = glm::sqrt(xi.x);
+    const float theta = 2.0 * PI * xi.y;
+    const glm::vec2 disk = glm::vec2(r * cos(theta), r * sin(theta));
+    return glm::vec3(disk.x, disk.y, glm::max(0.0f, glm::sqrt(1.0f - dot(disk, disk))));
 }
 __device__ float square_to_hemisphere_cosine_pdf(const glm::vec3& sample)
 {
@@ -74,15 +74,15 @@ __device__ glm::vec3 sample_f(const Material& material, const IntersectionData& 
     const float roughness = material.metallic_roughness.roughness_factor;
     const float metallic = material.metallic_roughness.metallic_factor;
 
-    float ggx_pdf = 0;
-    float diffuse_pdf = 0;
+    float ggx_pdf = 0.0f;
+    float diffuse_pdf = 0.0f;
     if (xi.z < metallic)
     {
-        if (roughness == 0)
+        if (roughness == 0.0f)
         {
 		    *wiW = reflect(-woW, N);
-		    ggx_pdf = 1.f;
-		    diffuse_pdf = 0.f;
+		    ggx_pdf = 1.0f;
+		    diffuse_pdf = 0.0f;
         }
         else
         {
@@ -116,7 +116,7 @@ __device__ glm::vec3 sample_f(const Material& material, const IntersectionData& 
         *wiW = local_to_world(N) * *wiW;
     }
 
-    *pdf = metallic * ggx_pdf + (1.f - metallic) * diffuse_pdf;
+    *pdf = metallic * ggx_pdf + (1.0f - metallic) * diffuse_pdf;
 
     const auto& L = *wiW;
 
@@ -124,30 +124,33 @@ __device__ glm::vec3 sample_f(const Material& material, const IntersectionData& 
 
     const glm::vec3	H = glm::normalize(L + V);
     const float	NdotV = abs(dot(N, V)) + 1e-5f;
-    const float NdotL = glm::max(0.f, dot(L, N));
-    if (NdotL <= 0.f) return glm::vec3(0.f);
-    const float LdotH = glm::max(0.f, dot(L, H));
-    const float	NdotH = glm::max(0.f, dot(H, N));
+    const float NdotL = glm::max(0.0f, dot(L, N));
+    if (NdotL <= 0.0f)
+    {
+        return glm::vec3(0.0f);
+    }
+    const float LdotH = glm::max(0.0f, dot(L, H));
+    const float	NdotH = glm::max(0.0f, dot(H, N));
 
     glm::vec3 F;
     glm::vec3 specular = get_specular(NdotV, NdotL, LdotH, NdotH, roughness, F0, &F);
 
     // Otherwise dividing by roughness in GGX which results in a NaN
-    if (roughness == 0.f)
+    if (roughness == 0.0f)
     {
-        float NdotL_spec = glm::max(0.f, dot(N, *wiW));
-        if (NdotL_spec > 0.f)
+        float NdotL_spec = glm::max(0.0f, dot(N, *wiW));
+        if (NdotL_spec > 0.0f)
         {
-	    specular = F / NdotL_spec;
+			specular = F / NdotL_spec;
         }
         else
         {
-	    specular = glm::vec3(0.f);
+			specular = glm::vec3(0.0f);
         }
     }
 
     float Fd = fr_disney_diffuse(NdotV, NdotL, LdotH, roughness);
-    glm::vec3 kD = (glm::vec3(1.f) - F) * (1.f - metallic);
+    glm::vec3 kD = (glm::vec3(1.0f) - F) * (1.0f - metallic);
     glm::vec3 diffuse = kD * (albedo * Fd / PI);
 
     return diffuse + specular;
@@ -186,7 +189,7 @@ __global__ void shade(
     if (intersection.t > 0.0f)
     {
         thrust::default_random_engine rng = make_seeded_random_engine(iter, idx, 0);
-        thrust::uniform_real_distribution<float> u01(0, 1);
+        thrust::uniform_real_distribution u01(0.0f, 1.0f);
 
         auto xi = glm::vec3(u01(rng), u01(rng), u01(rng));
 
@@ -203,7 +206,7 @@ __global__ void shade(
         }
 
         // Treat emission as light source
-        if (glm::dot(emissive_color, emissive_color) > 0.f)
+        if (glm::dot(emissive_color, emissive_color) > 0.0f)
         {
             color *= emissive_color;
             bounces = 0;
@@ -215,7 +218,7 @@ __global__ void shade(
             glm::vec3 normal = intersection.surface_normal;
             glm::vec3 wo = -ray.direction;
             // Assume it is a double sided material for now since no refraction
-            if (glm::dot(normal, wo) < 0.f)
+            if (glm::dot(normal, wo) < 0.0f)
             {
                 normal = -normal;
             }
@@ -243,13 +246,13 @@ __global__ void shade(
             glm::vec3 wi;
             float pdf;
             auto brdf = sample_f(material, isect, -ray.direction, xi, &wi, &pdf, textures);
-            float NdotL = glm::max(0.f, glm::dot(isect.normal, wi)); // Use wi after sampling
+            float NdotL = glm::max(0.0f, glm::dot(isect.normal, wi)); // Use wi after sampling
 
             ray = spawn_ray(isect.position, wi);
             bounces--;
             if (bounces == 0)
             {
-                color = glm::vec3(0.f);
+                color = glm::vec3(0.0f);
             }
 
             if (pdf != 0)
@@ -270,7 +273,7 @@ __global__ void shade(
         }
         else
         {
-            color = glm::vec3(0.f);
+            color = glm::vec3(0.0f);
         }
         bounces = 0;
     }

@@ -22,8 +22,8 @@
 vk::detail::DispatchLoaderDynamic vk::detail::defaultDispatchLoaderDynamic;
 
 // Require Vulkan 1.3 for dynamic rendering
-constexpr auto MAJOR = 1;
-constexpr auto MINOR = 3;
+constexpr auto major = 1;
+constexpr auto minor = 3;
 
 bool pt::VulkanContext::create_instance(bool enable_debug_layer)
 {
@@ -65,7 +65,7 @@ bool pt::VulkanContext::create_instance(bool enable_debug_layer)
                 });
     }
 
-    auto inst_ret = builder.require_api_version(MAJOR, MINOR).build();
+    auto inst_ret = builder.require_api_version(major, minor).build();
     if (!inst_ret)
     {
         return false;
@@ -119,7 +119,7 @@ bool pt::VulkanContext::create_device(VkSurfaceKHR surface)
 	};
 
     auto phys_ret = selector.set_surface(surface)
-        .set_minimum_version(MAJOR, MINOR)
+        .set_minimum_version(major, minor)
         .add_required_extensions(device_extensions)
         .set_required_features_12(features12)
         .set_required_features_13(features13)

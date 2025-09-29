@@ -17,9 +17,9 @@ public:
     glm::vec3 right;
     glm::vec2 fov;
     glm::vec2 pixel_length;
-    float m_target_distance = 2.f;
-    float focus_distance = 2.f;
-    float defocus_angle = 0.f;
+    float m_target_distance = 2.0f;
+    float focus_distance = 2.0f;
+    float defocus_angle = 0.0f;
 
     void update_vectors();
     void set_position(const glm::vec3& pos);

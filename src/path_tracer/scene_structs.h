@@ -66,19 +66,19 @@ struct Material
     } base_color;
     struct
     {
-        float metallic_factor = 0.f;
-        float roughness_factor = 0.f;
+        float metallic_factor = 0.0f;
+        float roughness_factor = 0.0f;
         int index = -1;
     } metallic_roughness;
     struct
     {
         int index = -1;
-        float scale = 1.f;
+        float scale = 1.0f;
     } normal;
     struct
     {
         int index = -1;
-        float strength = 1.f;
+        float strength = 1.0f;
     } occlusion;
     struct
     {

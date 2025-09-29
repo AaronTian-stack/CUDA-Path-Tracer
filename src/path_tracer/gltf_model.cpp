@@ -497,7 +497,7 @@ pt::glTFModel::~glTFModel()
 	cudaFree(d_materials);
 	if (d_nodes)
 	{
-		// Copy all device nodes to host to access their children_indices pointers
+		// Copy all device nodes to host to free their children
 		std::vector<DeviceNode> host_nodes(num_nodes);
 		cudaMemcpy(host_nodes.data(), d_nodes, sizeof(DeviceNode) * num_nodes, cudaMemcpyDeviceToHost);
 		for (const auto& node : host_nodes)

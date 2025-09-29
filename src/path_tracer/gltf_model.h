@@ -49,8 +49,8 @@ namespace pt
 
 		struct Primitive
 		{
-			int material_index = -1; // material index
-			int indices = -1; // accessor index
+			int material_index = -1; // Material index
+			int indices = -1; // Accessor index
 			int position_accessor = -1;
 			int normal_accessor = -1;
 			int texcoord_accessor = -1;

@@ -26,7 +26,7 @@ void Camera::rotate_around_target(float theta, float phi)
     glm::vec3 dir = glm::normalize(to_target);
     float current_angle = glm::acos(glm::clamp(glm::dot(dir, glm::vec3(0.0f, 1.0f, 0.0f)), -1.0f, 1.0f));
 
-    constexpr float max_tolerance = glm::radians(2.f);
+    constexpr float max_tolerance = glm::radians(2.0f);
 
     // Clamp phi to prevent flipping over poles
     if (current_angle - phi < max_tolerance)
