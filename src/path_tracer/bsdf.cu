@@ -51,13 +51,25 @@ __device__ glm::vec3 sample_f(const Material& material, const IntersectionData& 
 	glm::vec3 N = isect.normal;
 	glm::vec3 V = woW; // In rasterizer you would take vector from fragment position
 
+#ifdef PROCEDURAL_TEXTURE
+    // Cosine color curve in checker pattern
+    // https://iquilezles.org/articles/palettes/
+    int ix = static_cast<int>(isect.uv.x * 50.0f);
+    int iy = static_cast<int>(isect.uv.y * 50.0f);
+    int check = (ix + iy) & 1;
+	float cosine = (cos(isect.uv.x * 2.0f * PI) + 1.0f) * 0.5f;
+    glm::vec3 color = glm::vec3(cosine, 0.5f, 1.0f - cosine);
+    float mask = 1.0f - glm::step(0.5f, static_cast<float>(check));
+    glm::vec3 albedo = glm::mix(glm::vec3(0.0f), color, mask);
+#else
     glm::vec3 albedo = glm::vec3(material.base_color.factor);
 
     if (textures && material.base_color.index >= 0)
     {
         auto base_color = tex2D<float4>(textures[material.base_color.index], isect.uv.x, isect.uv.y);
-		albedo *= glm::vec3(base_color.x, base_color.y, base_color.z);
+        albedo *= glm::vec3(base_color.x, base_color.y, base_color.z);
     }
+#endif
 
     const float roughness = material.metallic_roughness.roughness_factor;
     const float metallic = material.metallic_roughness.metallic_factor;
@@ -68,22 +80,31 @@ __device__ glm::vec3 sample_f(const Material& material, const IntersectionData& 
     {
         if (roughness == 0)
         {
-	    *wiW = reflect(-woW, N);
-	    ggx_pdf = 1.f;
-	    diffuse_pdf = 0.f;
+		    *wiW = reflect(-woW, N);
+		    ggx_pdf = 1.f;
+		    diffuse_pdf = 0.f;
         }
         else
         {
-	    auto wo = world_to_local(N) * woW;
-	    if (wo.z == 0) return glm::vec3(0.);
+		    auto wo = world_to_local(N) * woW;
+            if (wo.z == 0)
+            {
+                return glm::vec3(0.);
+            }
 
-	    glm::vec3 wh = sample_wh(wo, glm::vec2(xi), roughness);
-	    if (glm::abs(glm::dot(wo, wh)) < 1e-6f) return glm::vec3(0.f);
-	    glm::vec3 wi = reflect(-wo, wh);
-	    *wiW = local_to_world(N) * wi;
-	    diffuse_pdf = square_to_hemisphere_cosine_pdf(wi);
-	    if (!same_hemisphere(wo, wi)) return glm::vec3(0.f);
-	    ggx_pdf = trowbridge_reitz_pdf(wo, wh, roughness) / (4 * glm::dot(wo, wh));
+		    glm::vec3 wh = sample_wh(wo, glm::vec2(xi), roughness);
+            if (glm::abs(glm::dot(wo, wh)) < 1e-6f)
+            {
+                return glm::vec3(0.f);
+            }
+		    glm::vec3 wi = reflect(-wo, wh);
+		    *wiW = local_to_world(N) * wi;
+		    diffuse_pdf = square_to_hemisphere_cosine_pdf(wi);
+            if (!same_hemisphere(wo, wi))
+            {
+                return glm::vec3(0.f);
+            }
+		    ggx_pdf = trowbridge_reitz_pdf(wo, wh, roughness) / (4 * glm::dot(wo, wh));
         }
     }
     else
