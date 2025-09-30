@@ -65,5 +65,6 @@ protected:
 
 public:
 	bool init_scene(const char* file_name);
+	void set_block_sizes(int bs2d, int bs1d, bool disable_save);
 	~PathTracer() override;
 };

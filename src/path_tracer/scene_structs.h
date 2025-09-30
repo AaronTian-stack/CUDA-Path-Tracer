@@ -23,6 +23,9 @@ struct PathTracerSettings
 	bool sort_rays = false;
 	DisplayMode display_mode = PROGRESSIVE;
 	TonemapMode tonemap_mode = ACES;
+	int block_size_2d = 16;
+	int block_size_1d = 128;
+	bool disable_save = false;
 };
 
 struct SceneSettings

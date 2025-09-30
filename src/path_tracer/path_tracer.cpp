@@ -77,10 +77,10 @@ void PathTracer::pathtrace(const PathTracerSettings& settings, const OptiXDenois
 	const auto res_y = camera.resolution.y;
 	const auto pixel_count = res_x * res_y;
 	
-	const dim3 block_size_2D(16, 16);
+	const dim3 block_size_2D(settings.block_size_2d, settings.block_size_2d);
 	const dim3 blocks_per_grid_2D(divup(res_x, block_size_2D.x), divup(res_y, block_size_2D.y));
 
-	const int block_size_1D = 128;
+	const int block_size_1D = settings.block_size_1d;
 
 	generate_ray_from_camera(blocks_per_grid_2D, block_size_2D, camera, iteration, m_scene_settings.trace_depth, m_paths);
 
@@ -305,9 +305,9 @@ void PathTracer::create()
 			std::vector<float4> host_data(width * height);
 			for (int i = 0; i < width * height; ++i)
 			{
-				float r = channels >= 1 ? data[i * channels] : 0.0f;
-				float g = channels >= 2 ? data[i * channels + 1] : 0.0f;
-				float b = channels >= 3 ? data[i * channels + 2] : 0.0f;
+				const float r = channels >= 1 ? data[i * channels] : 0.0f;
+				const float g = channels >= 2 ? data[i * channels + 1] : 0.0f;
+				const float b = channels >= 3 ? data[i * channels + 2] : 0.0f;
 				host_data[i] = {.x = r, .y = g, .z = b, .w = 1.0f };
 			}
 
@@ -456,45 +456,51 @@ void PathTracer::render()
 			std::chrono::duration<double> elapsed = end_time - start_time;
 			printf("Render time: %.2f seconds\n", elapsed.count());
 
-			// Save image
-			const auto pixel_count = res_x * res_y;
-			const dim3 block_size_2D(16, 16);
-			const dim3 blocks_per_grid_2D(divup(res_x, block_size_2D.x), divup(res_y, block_size_2D.y));
-			glm::vec3* save_image = m_images.out_denoise;
-			switch (m_settings.tonemap_mode)
+			if (!m_settings.disable_save)
 			{
-			case ACES:
-				aces_tonemap(blocks_per_grid_2D, block_size_2D, m_images.out_denoise, m_images.tonemapped_image, res_x, res_y, 1.0f);
-				save_image = m_images.tonemapped_image;
-				break;
-			case PBR_NEUTRAL:
-				pbr_neutral_tonemap(blocks_per_grid_2D, block_size_2D, m_images.out_denoise, m_images.tonemapped_image, res_x, res_y, 1.0f);
-				save_image = m_images.tonemapped_image;
-				break;
-			case NONE:
-				break;
-			}
-			std::vector<glm::vec3> host_image(pixel_count);
-			cudaMemcpy(host_image.data(), save_image, pixel_count * sizeof(glm::vec3), cudaMemcpyDeviceToHost);
+				// Save image
+				const auto pixel_count = res_x * res_y;
+				const dim3 block_size_2D(m_settings.block_size_2d, m_settings.block_size_2d);
+				const dim3 blocks_per_grid_2D(divup(res_x, static_cast<int>(block_size_2D.x)), divup(res_y, static_cast<int>(block_size_2D.y)));
+				glm::vec3* save_image = m_images.out_denoise;
+				switch (m_settings.tonemap_mode)
+				{
+				case ACES:
+					aces_tonemap(blocks_per_grid_2D, block_size_2D, m_images.out_denoise, m_images.tonemapped_image, res_x, res_y, 1.0f);
+					save_image = m_images.tonemapped_image;
+					break;
+				case PBR_NEUTRAL:
+					pbr_neutral_tonemap(blocks_per_grid_2D, block_size_2D, m_images.out_denoise, m_images.tonemapped_image, res_x, res_y, 1.0f);
+					save_image = m_images.tonemapped_image;
+					break;
+				case NONE:
+					break;
+				}
+				std::vector<glm::vec3> host_image(pixel_count);
+				cudaMemcpy(host_image.data(), save_image, pixel_count * sizeof(glm::vec3), cudaMemcpyDeviceToHost);
 
-			std::vector<unsigned char> png_data(pixel_count * 3);
-			for (size_t i = 0; i < pixel_count; ++i) {
-				glm::vec3 color = glm::clamp(host_image[i], 0.0f, 1.0f);
-				png_data[i * 3 + 0] = static_cast<unsigned char>(color.r * 255.0f);
-				png_data[i * 3 + 1] = static_cast<unsigned char>(color.g * 255.0f);
-				png_data[i * 3 + 2] = static_cast<unsigned char>(color.b * 255.0f);
+				std::vector<uint8_t> png_data(static_cast<size_t>(pixel_count * 3));
+				for (int i = 0; i < pixel_count; i++) 
+				{
+					glm::vec3 color = glm::clamp(host_image[i], 0.0f, 1.0f);
+					png_data[i * 3 + 0] = static_cast<uint8_t>(color.r * 255.0f);
+					png_data[i * 3 + 1] = static_cast<uint8_t>(color.g * 255.0f);
+					png_data[i * 3 + 2] = static_cast<uint8_t>(color.b * 255.0f);
+				}
+				time_t now;
+				static_cast<void>(time(&now));
+				char buf[sizeof "0000-00-00_00-00-00z"];
+				tm tm_buf;
+				static_cast<void>(gmtime_s(&tm_buf, &now));
+				static_cast<void>(strftime(buf, sizeof buf, "%Y-%m-%d_%H-%M-%Sz", &tm_buf));
+				auto current_time_string = std::string(buf);
+				std::stringstream ss;
+				ss << m_scene_settings.output_name << "." << current_time_string << "." << iteration << "samp.png";
+				stbi_write_png(ss.str().c_str(), res_x, res_y, 3, png_data.data(), res_x * 3);
+				printf("Image saved to: %s\n", ss.str().c_str());
 			}
-			time_t now;
-			time(&now);
-			char buf[sizeof "0000-00-00_00-00-00z"];
-			strftime(buf, sizeof buf, "%Y-%m-%d_%H-%M-%Sz", gmtime(&now));
-			std::string currentTimeString = std::string(buf);
-			std::stringstream ss;
-			ss << m_scene_settings.output_name << "." << currentTimeString << "." << iteration << "samp.png";
-			stbi_write_png(ss.str().c_str(), res_x, res_y, 3, png_data.data(), res_x * 3);
-			printf("Image saved to: %s\n", ss.str().c_str());
 
-			exit(EXIT_SUCCESS);
+			m_quit = true;
 		}
 	}
 
@@ -734,6 +740,13 @@ bool PathTracer::init_scene(const char* file_name)
 	}
 
 	return result;
+}
+
+void PathTracer::set_block_sizes(int bs2d, int bs1d, bool disable_save)
+{
+	m_settings.block_size_2d = bs2d;
+	m_settings.block_size_1d = bs1d;
+	m_settings.disable_save = disable_save;
 }
 
 PathTracer::~PathTracer()

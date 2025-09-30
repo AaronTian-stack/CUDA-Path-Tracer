@@ -112,6 +112,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     external/tinygltf-2.9.6
     external/vk-bootstrap
     external/Optix-9.0.0/include
+    external/argparse-3.2/include
     ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES})
 
 add_subdirectory(external/volk-1.4.304)
