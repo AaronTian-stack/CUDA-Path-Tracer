@@ -69,11 +69,11 @@ __global__ void generate_ray_from_camera(Camera cam, int iter, int traceDepth, P
         glm::vec3 origin = cam.position;
         glm::vec3 direction = pixel_dir;
 
-        if (cam.defocus_angle > 0.0f)
         {
-            // Depth of field thin lens model
-            // https://raytracing.github.io/books/RayTracingInOneWeekend.html#defocusblur
-            float defocus_radius = cam.focus_distance * tan(glm::radians(cam.defocus_angle / 2.0f));
+			float defocus_angle = glm::max(0.0f, cam.defocus_angle);
+			// Depth of field thin lens model
+			// https://raytracing.github.io/books/RayTracingInOneWeekend.html#defocusblur
+            float defocus_radius = cam.focus_distance * tan(glm::radians(defocus_angle / 2.0f));
             glm::vec3 defocus_disk_u = cam.right * defocus_radius;
             glm::vec3 defocus_disk_v = cam.up * defocus_radius;
 
@@ -234,9 +234,12 @@ void compute_intersections(int threads, int depth, int num_paths, PathSegments p
 
 __device__ float ray_aabb_intersect(const Ray& ray, const glm::vec3& min, const glm::vec3& max)
 {
-    float tmin = -FLT_MAX, tmax = FLT_MAX;
+    float t_min = -FLT_MAX;
+	float t_max = FLT_MAX;
 
-    for (int i = 0; i < 3; ++i) {
+	#pragma unroll
+    for (int i = 0; i < 3; i++)
+    {
         if (glm::abs(ray.direction[i]) < 1e-8f) 
         {
             // Ray parallel to axis
@@ -247,24 +250,22 @@ __device__ float ray_aabb_intersect(const Ray& ray, const glm::vec3& min, const 
         }
     	else 
         {
-            float invD = 1.0f / ray.direction[i];
-            float t0 = (min[i] - ray.origin[i]) * invD;
-            float t1 = (max[i] - ray.origin[i]) * invD;
-            if (invD < 0.0f) 
+    		float inv_d = 1.0f / ray.direction[i];
+            float t0 = (min[i] - ray.origin[i]) * inv_d;
+            float t1 = (max[i] - ray.origin[i]) * inv_d;
+            if (inv_d < 0.0f) 
             {
-                float temp = t0;
-                t0 = t1;
-                t1 = temp;
+                thrust::swap(t0, t1);
             }
-            tmin = glm::max(tmin, t0);
-            tmax = glm::min(tmax, t1);
-            if (tmax <= tmin) 
+            t_min = glm::max(t_min, t0);
+            t_max = glm::min(t_max, t1);
+            if (t_max <= t_min) 
             {
                 return -1.0f;
             }
         }
     }
-    return tmin > 0.0f || tmax > 0.0f ? glm::max(tmin, 0.0f) : -1.0f;
+    return t_min > 0.0f || t_max > 0.0f ? glm::max(t_min, 0.0f) : -1.0f;
 }
 
 // https://en.wikipedia.org/wiki/Trumbore_intersection_algorithm
@@ -381,8 +382,7 @@ __global__ void compute_gltf_intersections_kernel(int num_paths, PathSegments pa
             norm_bv = d_buffer_views[norm_acc.buffer_view];
             norm_buffer = d_cu_buffers[norm_bv.buffer_index];
             norm_offset = norm_acc.offset + norm_bv.offset;
-            norm_stride = norm_bv.stride;
-            if (norm_stride == 0) norm_stride = 3 * sizeof(float);
+            norm_stride = norm_bv.stride ? norm_bv.stride : 3 * sizeof(float);
         }
 
         // UVs
@@ -397,8 +397,7 @@ __global__ void compute_gltf_intersections_kernel(int num_paths, PathSegments pa
             texcoord_bv = d_buffer_views[texcoord_acc.buffer_view];
             texcoord_buffer = d_cu_buffers[texcoord_bv.buffer_index];
             texcoord_offset = texcoord_acc.offset + texcoord_bv.offset;
-            texcoord_stride = texcoord_bv.stride;
-            if (texcoord_stride == 0) texcoord_stride = 2 * sizeof(float);
+            texcoord_stride = texcoord_bv.stride ? texcoord_bv.stride : 2 * sizeof(float);
         }
 
         // Tangents
@@ -413,8 +412,7 @@ __global__ void compute_gltf_intersections_kernel(int num_paths, PathSegments pa
             tangent_bv = d_buffer_views[tangent_acc.buffer_view];
             tangent_buffer = d_cu_buffers[tangent_bv.buffer_index];
             tangent_offset = tangent_acc.offset + tangent_bv.offset;
-            tangent_stride = tangent_bv.stride;
-            if (tangent_stride == 0) tangent_stride = 4 * sizeof(float);
+            tangent_stride = tangent_bv.stride ? tangent_bv.stride : 4 * sizeof(float);
         }
 
 #ifdef ENABLE_AABB_CULLING
@@ -462,7 +460,6 @@ __global__ void compute_gltf_intersections_kernel(int num_paths, PathSegments pa
 
             glm::vec2 uv0, uv1, uv2;
             uv0 = uv1 = uv2 = glm::vec2(0.0f);
-
             if (texcoord_accessor_idx != -1) 
             {
                 uv0 = *reinterpret_cast<glm::vec2*>(static_cast<uint8_t*>(texcoord_buffer) + texcoord_offset + i0 * texcoord_stride);
@@ -471,8 +468,6 @@ __global__ void compute_gltf_intersections_kernel(int num_paths, PathSegments pa
             }
 
             glm::vec4 t0, t1, t2;
-            t0 = t1 = t2 = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f); // Default tangent
-
             if (tangent_accessor_idx != -1) 
             {
                 t0 = *reinterpret_cast<glm::vec4*>(static_cast<uint8_t*>(tangent_buffer) + tangent_offset + i0 * tangent_stride);
