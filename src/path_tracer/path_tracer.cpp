@@ -252,7 +252,12 @@ void PathTracer::init_window()
 
 void PathTracer::create()
 {
-	m_context.create_texture(vk::Format::eR8G8B8A8Unorm, {static_cast<uint32_t>(m_scene.camera.resolution.x), static_cast<uint32_t>(m_scene.camera.resolution.y)}, &m_texture);
+	m_context.create_texture(vk::Format::eR8G8B8A8Unorm, 
+		{
+						.width = static_cast<uint32_t>(m_scene.camera.resolution.x),
+						.height = static_cast<uint32_t>(m_scene.camera.resolution.y)
+		}, 
+		&m_texture);
 	THROW_IF_FALSE(import_vk_texture_cuda(m_texture, &m_interop));
 
 	for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
@@ -332,7 +337,7 @@ void PathTracer::create()
 		else
 		{
 			char buffer[256];
-			snprintf(buffer, sizeof(buffer), "Failed to load HDRI: %s\n", m_scene.hdri_path.c_str());
+			static_cast<void>(snprintf(buffer, sizeof(buffer), "Failed to load HDRI: %s\n", m_scene.hdri_path.c_str()));
 			OutputDebugStringA(buffer);
 		}
 #endif
@@ -399,7 +404,7 @@ void PathTracer::render()
 	if (ImGuiIO& io = ImGui::GetIO(); !io.WantCaptureMouse)
 	{
 		const auto delta = mouse_delta;
-		if ((pressed && glm::length2(mouse_delta) > 0))
+		if (pressed && glm::length2(mouse_delta) > 0)
 		{
 			iteration = 0;
 		}
@@ -444,7 +449,7 @@ void PathTracer::render()
 		pathtrace(m_settings, m_denoiser, denoise_interval, iteration++);
 		
 		char title[256];
-		snprintf(title, sizeof(title), "CUDA Path Tracer | Iterations: %d", iteration);
+		static_cast<void>(snprintf(title, sizeof(title), "CUDA Path Tracer | Iterations: %d", iteration));
 		SDL_SetWindowTitle(m_window.get_window(), title);
 		
 		cudaExternalSemaphoreSignalParams params{};
@@ -521,7 +526,8 @@ void PathTracer::render()
 		.oldLayout = vk::ImageLayout::eGeneral,
 		.newLayout = vk::ImageLayout::eTransferSrcOptimal,
 		.image = m_texture.image,
-		.subresourceRange = { vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1 },
+		.subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eColor, .baseMipLevel = 0, .levelCount = 1,
+			.baseArrayLayer = 0, .layerCount = 1 },
 	};
 
 	vk::ImageMemoryBarrier barrier_render
@@ -546,13 +552,45 @@ void PathTracer::render()
 
 	vk::ImageBlit blit_region
 	{
-		.srcSubresource = { vk::ImageAspectFlagBits::eColor, 0, 0, 1 },
+		.srcSubresource = 
+		{
+			.aspectMask = vk::ImageAspectFlagBits::eColor,
+			.mipLevel = 0,
+			.baseArrayLayer = 0,
+			.layerCount = 1
+		},
 	};
-	blit_region.srcOffsets[0] = vk::Offset3D{0,0,0};
-	blit_region.srcOffsets[1] = vk::Offset3D{res_x,res_y,1};
-	blit_region.dstSubresource = { vk::ImageAspectFlagBits::eColor, 0, 0, 1 };
-	blit_region.dstOffsets[0] = vk::Offset3D{0,0,0};
-	blit_region.dstOffsets[1] = vk::Offset3D{res_x,res_y,1};
+	blit_region.srcOffsets[0] = vk::Offset3D
+	{
+		.x = 0,
+		.y = 0,
+		.z = 0
+	};
+	blit_region.srcOffsets[1] = vk::Offset3D
+	{
+		.x = res_x,
+		.y = res_y,
+		.z = 1
+	};
+	blit_region.dstSubresource = 
+	{
+		.aspectMask = vk::ImageAspectFlagBits::eColor,
+		.mipLevel = 0,
+		.baseArrayLayer = 0,
+		.layerCount = 1
+	};
+	blit_region.dstOffsets[0] = vk::Offset3D
+	{
+		.x = 0,
+		.y = 0,
+		.z = 0
+	};
+	blit_region.dstOffsets[1] = vk::Offset3D
+	{
+		.x = res_x,
+		.y = res_y,
+		.z = 1
+	};
 
 	cmd_buf.blitImage(m_texture.image, vk::ImageLayout::eTransferSrcOptimal, m_swapchain.images[swapchain_index], vk::ImageLayout::eTransferDstOptimal, 1, &blit_region, vk::Filter::eNearest);
 
@@ -642,11 +680,13 @@ void PathTracer::render()
 		};
 		// Wait for image to be available and CUDA to finish
 		std::array<vk::SemaphoreSubmitInfo, 2> wait_infos;
-		wait_infos[0] = {
+		wait_infos[0] = 
+		{
 			.semaphore = m_image_available_semaphores[m_frame_index].get(),
 			.stageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
 		};
-		wait_infos[1] = {
+		wait_infos[1] = 
+		{
 			.semaphore = m_cuda_semaphores[m_frame_index].semaphore,
 			.stageMask = vk::PipelineStageFlagBits2::eTransfer,
 		};
@@ -742,7 +782,7 @@ bool PathTracer::init_scene(const char* file_name)
 	return result;
 }
 
-void PathTracer::set_block_sizes(int bs2d, int bs1d, bool disable_save)
+void PathTracer::set_block_sizes(const int bs2d, const int bs1d, const bool disable_save)
 {
 	m_settings.block_size_2d = bs2d;
 	m_settings.block_size_1d = bs1d;
