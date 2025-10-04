@@ -268,7 +268,7 @@ __device__ float ray_aabb_intersect(const Ray& ray, const glm::vec3& min, const 
     return t_min > 0.0f || t_max > 0.0f ? glm::max(t_min, 0.0f) : -1.0f;
 }
 
-// https://en.wikipedia.org/wiki/Trumbore_intersection_algorithm
+// https://en.wikipedia.org/wiki/M%C3%B6ller%E2%80%93Trumbore_intersection_algorithm
 __device__ float triangle_intersect(const Ray& ray, const glm::vec3& v0, const glm::vec3& v1, const glm::vec3& v2, glm::vec2& bary_out)
 {
     const float EPSILON = 1e-6f;

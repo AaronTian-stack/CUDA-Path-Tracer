@@ -67,7 +67,9 @@ void Application::run(bool enable_debug_layer)
 				m_quit = true;
 			}
 			if (ImGui::GetCurrentContext())
+			{
 				ImGui_ImplSDL3_ProcessEvent(&event);
+			}
 		}
 		render();
 	}
