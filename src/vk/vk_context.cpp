@@ -105,7 +105,7 @@ bool pt::VulkanContext::create_device(VkSurfaceKHR surface)
     vkb::PhysicalDeviceSelector selector{ m_instance };
 
     assert(surface);
-    assert(MINOR >= 3);
+    assert(minor >= 3);
 
     VkPhysicalDeviceVulkan12Features features12
 	{
