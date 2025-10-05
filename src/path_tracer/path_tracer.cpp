@@ -437,7 +437,7 @@ void PathTracer::render()
 	if (iteration == 0)
 	{
 		reset_scene();
-		start_time = std::chrono::high_resolution_clock::now();
+		start_time = std::chrono::steady_clock::now();
 	}
 
 	const auto& camera = m_scene.camera;
@@ -457,7 +457,7 @@ void PathTracer::render()
 
 		if (iteration >= m_scene_settings.iterations)
 		{
-			auto end_time = std::chrono::high_resolution_clock::now();
+			auto end_time = std::chrono::steady_clock::now();
 			std::chrono::duration<double> elapsed = end_time - start_time;
 			printf("Render time: %.2f seconds\n", elapsed.count());
 
@@ -526,8 +526,14 @@ void PathTracer::render()
 		.oldLayout = vk::ImageLayout::eGeneral,
 		.newLayout = vk::ImageLayout::eTransferSrcOptimal,
 		.image = m_texture.image,
-		.subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eColor, .baseMipLevel = 0, .levelCount = 1,
-			.baseArrayLayer = 0, .layerCount = 1 },
+		.subresourceRange = 
+		{
+			.aspectMask = vk::ImageAspectFlagBits::eColor,
+			.baseMipLevel = 0,
+			.levelCount = 1,
+			.baseArrayLayer = 0,
+			.layerCount = 1
+		},
 	};
 
 	vk::ImageMemoryBarrier barrier_render
@@ -547,7 +553,7 @@ void PathTracer::render()
 		vk::DependencyFlags(),
 		0, nullptr,
 		0, nullptr,
-		2, barriers.data()
+		barriers.size(), barriers.data()
 	);
 
 	vk::ImageBlit blit_region

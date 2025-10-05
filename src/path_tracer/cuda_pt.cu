@@ -415,7 +415,7 @@ __global__ void compute_gltf_intersections_kernel(int num_paths, PathSegments pa
             tangent_stride = tangent_bv.stride ? tangent_bv.stride : 4 * sizeof(float);
         }
 
-#ifdef ENABLE_AABB_CULLING
+#if ENABLE_AABB_CULLING
         if (ray_aabb_intersect(local_ray, prim.aabb.min, prim.aabb.max) < 0.0f)
         {
             continue;

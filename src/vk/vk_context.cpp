@@ -302,14 +302,14 @@ vk::UniqueSemaphore pt::VulkanContext::create_unique_semaphore(const vk::Semapho
 
 bool pt::VulkanContext::create_texture(vk::Format format, vk::Extent2D dimensions, VulkanTexture* texture) const
 {
-    vk::ExternalMemoryImageCreateInfo externalMemoryInfo
+    vk::ExternalMemoryImageCreateInfo external_memory_info
     {
         .handleTypes = vk::ExternalMemoryHandleTypeFlagBits::eOpaqueWin32,
     };
 
     vk::ImageCreateInfo image_create_info
     {
-			.pNext = &externalMemoryInfo,
+			.pNext = &external_memory_info,
             .flags = vk::ImageCreateFlags(),
             .imageType = vk::ImageType::e2D,
             .format = format,
@@ -362,15 +362,15 @@ bool pt::VulkanContext::create_texture(vk::Format format, vk::Extent2D dimension
 
     // Export for CUDA interop
 	// TODO: Linux support?
-    VkMemoryGetWin32HandleInfoKHR handleInfo{};
-    handleInfo.sType = VK_STRUCTURE_TYPE_MEMORY_GET_WIN32_HANDLE_INFO_KHR;
-    handleInfo.memory = texture->memory;
-    handleInfo.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_BIT;
+    VkMemoryGetWin32HandleInfoKHR handle_info{};
+    handle_info.sType = VK_STRUCTURE_TYPE_MEMORY_GET_WIN32_HANDLE_INFO_KHR;
+    handle_info.memory = texture->memory;
+    handle_info.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_BIT;
     texture->win32_handle = nullptr;
     const auto vk_get_memory_win32_handle_khr_fn = reinterpret_cast<PFN_vkGetMemoryWin32HandleKHR>(vkGetDeviceProcAddr(m_logical_device, "vkGetMemoryWin32HandleKHR"));
     if (vk_get_memory_win32_handle_khr_fn)
     {
-        VkResult handleResult = vk_get_memory_win32_handle_khr_fn(m_logical_device, &handleInfo, &texture->win32_handle);
+        VkResult handleResult = vk_get_memory_win32_handle_khr_fn(m_logical_device, &handle_info, &texture->win32_handle);
         if (handleResult != VK_SUCCESS)
         {
             texture->win32_handle = nullptr;

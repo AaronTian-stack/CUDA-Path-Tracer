@@ -7,7 +7,7 @@
 __host__ __device__ float box_intersection_test(
     Geom box,
     Ray r,
-    glm::vec3& intersectionPoint,
+    glm::vec3& intersection_point,
     glm::vec3& normal,
     bool& outside)
 {
@@ -52,10 +52,10 @@ __host__ __device__ float box_intersection_test(
             tmin_n = tmax_n;
             outside = false;
         }
-        intersectionPoint = multiply_mv(box.transform, glm::vec4(get_point_on_ray(q, t_min), 1.0f));
+        intersection_point = multiply_mv(box.transform, glm::vec4(get_point_on_ray(q, t_min), 1.0f));
         normal = glm::normalize(multiply_mv(box.invTranspose, glm::vec4(tmin_n, 0.0f)));
 
-        return glm::length(r.origin - intersectionPoint);
+        return glm::length(r.origin - intersection_point);
     }
 
     return -1.0f;
@@ -64,7 +64,7 @@ __host__ __device__ float box_intersection_test(
 __host__ __device__ float sphere_intersection_test(
     Geom sphere,
     Ray r,
-    glm::vec3& intersectionPoint,
+    glm::vec3& intersection_point,
     glm::vec3& normal,
     bool& outside)
 {
@@ -107,8 +107,8 @@ __host__ __device__ float sphere_intersection_test(
 
     glm::vec3 objspace_intersection = get_point_on_ray(rt, t);
 
-    intersectionPoint = multiply_mv(sphere.transform, glm::vec4(objspace_intersection, 1.0f));
+    intersection_point = multiply_mv(sphere.transform, glm::vec4(objspace_intersection, 1.0f));
     normal = glm::normalize(multiply_mv(sphere.invTranspose, glm::vec4(objspace_intersection, 0.0f)));
 
-    return glm::length(r.origin - intersectionPoint);
+    return glm::length(r.origin - intersection_point);
 }
