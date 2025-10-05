@@ -112,7 +112,7 @@ __global__ void accumulate_albedo_normal(int num_paths, ShadeableIntersection* i
     }
 }
 
-__global__ void set_image_from_vec3(cudaSurfaceObject_t surf, glm::vec3* image, size_t width, size_t height, float scale)
+__global__ void set_image_from_vec3(cudaSurfaceObject_t surf, glm::vec3* image, size_t width, size_t height)
 {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -121,7 +121,7 @@ __global__ void set_image_from_vec3(cudaSurfaceObject_t surf, glm::vec3* image, 
         return;
     }
     int index = x + y * width;
-    glm::vec3 col = image[index] * scale;
+    glm::vec3 col = image[index];
     col = glm::clamp(col, 0.0f, 1.0f);
     uchar4 color;
     color.x = col.x * 255.0f;
@@ -131,9 +131,9 @@ __global__ void set_image_from_vec3(cudaSurfaceObject_t surf, glm::vec3* image, 
     surf2Dwrite(color, surf, x * sizeof(uchar4), y);
 }
 
-void set_image(const dim3& grid, const dim3& block, cudaSurfaceObject_t surf_obj, glm::vec3* image, size_t width, size_t height, float scale)
+void set_image(const dim3& grid, const dim3& block, cudaSurfaceObject_t surf_obj, glm::vec3* image, size_t width, size_t height)
 {
-    set_image_from_vec3<<<grid, block>>>(surf_obj, image, width, height, scale);
+    set_image_from_vec3<<<grid, block>>>(surf_obj, image, width, height);
 }
 
 void generate_ray_from_camera(const dim3& grid, const dim3& block, const Camera& cam, int iter, int trace_depth,
@@ -583,7 +583,9 @@ __global__ void aces_tonemap_kernel(glm::vec3* input, glm::vec3* output, size_t 
     const float d = 0.59f;
     const float e = 0.14f;
     glm::vec3 result = (color * (a * color + b)) / (color * (c * color + d) + e);
-    output[index] = glm::clamp(result, 0.0f, 1.0f);
+    // Apply gamma correction
+    result = glm::pow(result, glm::vec3(1.0f / 2.2f));
+    output[index] = result;
 }
 
 void aces_tonemap(const dim3& grid, const dim3& block, glm::vec3* input, glm::vec3* output, size_t width, size_t height, float scale)
@@ -610,7 +612,9 @@ __global__ void pbr_neutral_tonemap_kernel(glm::vec3* input, glm::vec3* output, 
     float peak = glm::max(color.r, glm::max(color.g, color.b));
     if (peak < start_compression)
     {
-        output[index] = glm::clamp(color, 0.0f, 1.0f);
+        // Apply gamma correction
+        color = glm::pow(color, glm::vec3(1.0f / 2.2f));
+        output[index] = color;
         return;
     }
 
@@ -620,10 +624,28 @@ __global__ void pbr_neutral_tonemap_kernel(glm::vec3* input, glm::vec3* output, 
 
     float g = 1.0f - 1.0f / (desaturation * (peak - new_peak) + 1.0f);
     color = glm::mix(color, new_peak * glm::vec3(1.0f, 1.0f, 1.0f), g);
-    output[index] = glm::clamp(color, 0.0f, 1.0f);
+    // Apply gamma correction
+    color = glm::pow(color, glm::vec3(1.0f / 2.2f));
+    output[index] = color;
 }
 
 void pbr_neutral_tonemap(const dim3& grid, const dim3& block, glm::vec3* input, glm::vec3* output, size_t width, size_t height, float scale)
 {
     pbr_neutral_tonemap_kernel<<<grid, block>>>(input, output, width, height, scale);
+}
+
+__global__ void gamma_correct_only_kernel(glm::vec3* input, glm::vec3* output, size_t width, size_t height, float scale)
+{
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
+    if (x >= width || y >= height) return;
+    int index = x + y * width;
+    glm::vec3 color = input[index] * scale;
+    color = glm::pow(color, glm::vec3(1.0f / 2.2f));
+    output[index] = color;
+}
+
+void gamma_correct_only(const dim3& grid, const dim3& block, glm::vec3* input, glm::vec3* output, size_t width, size_t height, float scale)
+{
+    gamma_correct_only_kernel<<<grid, block>>>(input, output, width, height, scale);
 }

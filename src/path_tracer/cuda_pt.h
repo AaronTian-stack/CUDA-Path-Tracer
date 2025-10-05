@@ -10,7 +10,7 @@ void test_set_image(cudaSurfaceObject_t surf_obj, size_t width, size_t height, f
 
 // Expose wrappers here so that path tracer can use them
 
-void set_image(const dim3& grid, const dim3& block, cudaSurfaceObject_t surf_obj, glm::vec3* image, size_t width, size_t height, float scale);
+void set_image(const dim3& grid, const dim3& block, cudaSurfaceObject_t surf_obj, glm::vec3* image, size_t width, size_t height);
 void generate_ray_from_camera(const dim3& grid, const dim3& block, const Camera& cam, int iter, int trace_depth, PathSegments path_segments);
 void accumulate_albedo_normal(const dim3& grid, const int block_size_1D,
 	int num_paths, ShadeableIntersection* intersections, Material* materials,
@@ -26,3 +26,4 @@ void normalize_albedo_normal(const dim3& grid, const dim3& block, glm::vec2 reso
 void average_image_for_denoise(const dim3& grid, const dim3& block, glm::vec3* image, glm::vec2 resolution, int iter, glm::vec3* in_denoise);
 void aces_tonemap(const dim3& grid, const dim3& block, glm::vec3* input, glm::vec3* output, size_t width, size_t height, float scale = 1.0f);
 void pbr_neutral_tonemap(const dim3& grid, const dim3& block, glm::vec3* input, glm::vec3* output, size_t width, size_t height, float scale = 1.0f);
+void gamma_correct_only(const dim3& grid, const dim3& block, glm::vec3* input, glm::vec3* output, size_t width, size_t height, float scale = 1.0f);

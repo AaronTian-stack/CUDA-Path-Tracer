@@ -12,6 +12,6 @@
     "DEFOCUS_ANGLE":  0.5
   },
   "HDRI": "../scenes/the_sky_is_on_fire_2k.hdr",
-  "EXPOSURE": 1.2,
+  "EXPOSURE": 0.5,
   "GLTF": "../scenes/polly_scene.glb"
 }

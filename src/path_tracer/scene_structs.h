@@ -64,7 +64,7 @@ struct Material
 {
     struct
     {
-        glm::vec4 factor;
+        glm::vec4 factor{};
         int index = -1; // Texture index NOT image
     } base_color;
     struct
@@ -85,7 +85,7 @@ struct Material
     } occlusion;
     struct
     {
-        glm::vec3 factor;
+        glm::vec3 factor{};
         int index = -1;
     } emissive;
 };

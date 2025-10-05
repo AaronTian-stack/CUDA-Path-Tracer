@@ -195,23 +195,24 @@ void PathTracer::pathtrace(const PathTracerSettings& settings, const OptiXDenois
 		{
 		case ACES:
 			aces_tonemap(blocks_per_grid_2D, block_size_2D, source_image, m_images.tonemapped_image, res_x, res_y, scale);
-			set_image(blocks_per_grid_2D, block_size_2D, m_interop.surf_obj, m_images.tonemapped_image, res_x, res_y, 1.0f);
+			set_image(blocks_per_grid_2D, block_size_2D, m_interop.surf_obj, m_images.tonemapped_image, res_x, res_y);
 			break;
 		case PBR_NEUTRAL:
 			pbr_neutral_tonemap(blocks_per_grid_2D, block_size_2D, source_image, m_images.tonemapped_image, res_x, res_y, scale);
-			set_image(blocks_per_grid_2D, block_size_2D, m_interop.surf_obj, m_images.tonemapped_image, res_x, res_y, 1.0f);
+			set_image(blocks_per_grid_2D, block_size_2D, m_interop.surf_obj, m_images.tonemapped_image, res_x, res_y);
 			break;
 		case NONE:
-			set_image(blocks_per_grid_2D, block_size_2D, m_interop.surf_obj, source_image, res_x, res_y, scale);
+			gamma_correct_only(blocks_per_grid_2D, block_size_2D, source_image, m_images.tonemapped_image, res_x, res_y, scale);
+			set_image(blocks_per_grid_2D, block_size_2D, m_interop.surf_obj, m_images.tonemapped_image, res_x, res_y);
 			break;
 		}
 		break;
 	}
 	case ALBEDO:
-		set_image(blocks_per_grid_2D, block_size_2D, m_interop.surf_obj, m_images.albedo, res_x, res_y, 1.0f);
+		set_image(blocks_per_grid_2D, block_size_2D, m_interop.surf_obj, m_images.albedo, res_x, res_y);
 		break;
 	case NORMAL:
-		set_image(blocks_per_grid_2D, block_size_2D, m_interop.surf_obj, m_images.normal, res_x, res_y, 1.0f);
+		set_image(blocks_per_grid_2D, block_size_2D, m_interop.surf_obj, m_images.normal, res_x, res_y);
 		break;
 	case DENOISED:
 	{
@@ -221,14 +222,15 @@ void PathTracer::pathtrace(const PathTracerSettings& settings, const OptiXDenois
 		{
 		case ACES:
 			aces_tonemap(blocks_per_grid_2D, block_size_2D, source_image, m_images.tonemapped_image, res_x, res_y, scale);
-			set_image(blocks_per_grid_2D, block_size_2D, m_interop.surf_obj, m_images.tonemapped_image, res_x, res_y, 1.0f);
+			set_image(blocks_per_grid_2D, block_size_2D, m_interop.surf_obj, m_images.tonemapped_image, res_x, res_y);
 			break;
 		case PBR_NEUTRAL:
 			pbr_neutral_tonemap(blocks_per_grid_2D, block_size_2D, source_image, m_images.tonemapped_image, res_x, res_y, scale);
-			set_image(blocks_per_grid_2D, block_size_2D, m_interop.surf_obj, m_images.tonemapped_image, res_x, res_y, 1.0f);
+			set_image(blocks_per_grid_2D, block_size_2D, m_interop.surf_obj, m_images.tonemapped_image, res_x, res_y);
 			break;
 		case NONE:
-			set_image(blocks_per_grid_2D, block_size_2D, m_interop.surf_obj, source_image, res_x, res_y, scale);
+			gamma_correct_only(blocks_per_grid_2D, block_size_2D, source_image, m_images.tonemapped_image, res_x, res_y, scale);
+			set_image(blocks_per_grid_2D, block_size_2D, m_interop.surf_obj, m_images.tonemapped_image, res_x, res_y);
 			break;
 		}
 		break;
@@ -467,20 +469,20 @@ void PathTracer::render()
 				const auto pixel_count = res_x * res_y;
 				const dim3 block_size_2D(m_settings.block_size_2d, m_settings.block_size_2d);
 				const dim3 blocks_per_grid_2D(divup(res_x, static_cast<int>(block_size_2D.x)), divup(res_y, static_cast<int>(block_size_2D.y)));
-				glm::vec3* save_image = m_images.out_denoise;
+				glm::vec3* save_image = m_images.tonemapped_image;
 				switch (m_settings.tonemap_mode)
 				{
 				case ACES:
 					aces_tonemap(blocks_per_grid_2D, block_size_2D, m_images.out_denoise, m_images.tonemapped_image, res_x, res_y, 1.0f);
-					save_image = m_images.tonemapped_image;
 					break;
 				case PBR_NEUTRAL:
 					pbr_neutral_tonemap(blocks_per_grid_2D, block_size_2D, m_images.out_denoise, m_images.tonemapped_image, res_x, res_y, 1.0f);
-					save_image = m_images.tonemapped_image;
 					break;
 				case NONE:
+					gamma_correct_only(blocks_per_grid_2D, block_size_2D, m_images.out_denoise, m_images.tonemapped_image, res_x, res_y, 1.0f);
 					break;
 				}
+				
 				std::vector<glm::vec3> host_image(pixel_count);
 				cudaMemcpy(host_image.data(), save_image, pixel_count * sizeof(glm::vec3), cudaMemcpyDeviceToHost);
 
