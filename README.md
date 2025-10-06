@@ -36,8 +36,9 @@ A Monte-Carlo path tracer implemented using C++, CUDA, and Vulkan. Rays are trac
 
 * [CUDA-Vulkan Interop using Vulkan 1.3](#cuda-vulkan-interop-using-vulkan-13)
 * [Stream Compaction](#stream-compaction)
-* [Ray Sorting](#ray-sorting)
+* [Material Sorting](#material-sorting)
 * [Bounding Volume Intersection](#bounding-volume-intersection)
+* [Switching Path Segments to Struct of Arrays](#switching-path-segments-to-struct-of-arrays)
 
 ## Build and Run
 
@@ -266,7 +267,7 @@ When rendering triangle models, we normally would iterate over every single tria
 
 This simple optimization makes a large difference in most of the above tested scenes. In the robot scene there is not a large improvement. This is likely because the robot model takes up a large portion of the view which will cause most initial rays to intersect with the bounding box. Ideally, threads within a warp are coherent: an entire warp of rays should either all intersect or all miss the bounding box. If we were to repeat this bounding box scheme recursively based on the triangles in the mesh, we could build a BVH (bounding volume hierarchy) which would yield even better improvements.
 
-#### Switching Ray Segments to Struct of Arrays
+#### Switching Path Segments to Struct of Arrays
 
 I switched the path segment struct to a struct of arrays to improve memory coalescing when accessing the ray data:
 
