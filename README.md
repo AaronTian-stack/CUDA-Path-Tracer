@@ -12,12 +12,13 @@ CUDA Path Tracer
 A Monte-Carlo path tracer implemented using C++, CUDA, and Vulkan. Rays are traced using CUDA and a progressive render along with controls is displayed using Vulkan.
 
 <img src="img/polly_render.png" width="100%">
-<div style="display: flex;">
-<img src="img/people_render.png" width="50%">
-<img src="img/robot_render.png" width="50%">
-</div> 
 
-## Table of Contents
+<table>
+<tr>
+<td width="50%"><img src="img/people_render.png" width="100%"></td>
+<td width="50%"><img src="img/robot_render.png" width="100%"></td>
+</tr>
+</table> 
 
 ## Features
 
@@ -127,20 +128,27 @@ One sample is just a small portion of the full integral in the rendering equatio
 
 <div align="center">
   <img src="img/env_ACES_no_denoising__env_ACES.png" alt="denoise" style="width: 100%;">
-  <div style="display: flex; justify-content: center;">
-    <img src="img/env_ACES_no_denoising.png" alt="env_ACES_no_denoising" style="width: 50%;">
-    <img src="img/env_ACES.png" alt="env_ACES" style="width: 50%;">
-  </div>
+  
+  <table>
+  <tr>
+  <td width="50%"><img src="img/env_ACES_no_denoising.png" alt="env_ACES_no_denoising" width="100%"></td>
+  <td width="50%"><img src="img/env_ACES.png" alt="env_ACES" width="100%"></td>
+  </tr>
+  </table>
+  
   <p>Side-by-side comparison with and without denoising, rendered with 5000 samples.</p>
 </div>
 
 Given the same number of samples, the denoised image is much cleaner. The denoiser takes in the albedo and normal buffers of the image as auxiliary inputs to help it better preserve edges and details. Since I only denoise the image when the option is selected in the preview menu or when the desired number of samples is reached and the render is saved to disk, I consider this to be a purely visual feature rather than a performance feature. When viewing the denoised image in the preview, the image is denoised every set number of iterations (not every frame).
 
-<figure style="text-align:center">
-  <img src="img/albedo.png" alt="albedo" style="width:48%; height:auto;">
-  <img src="img/normal.png" alt="normal" style="width:48%; height:auto;">
-  <figcaption style="margin-top:0.5rem">Albedo and normal inputs. Note that the normal is the raw floating point value, which is why the right side is black (negative value).</figcaption>
-</figure>
+<table>
+<tr>
+<td width="50%"><img src="img/albedo.png" alt="albedo" width="100%"></td>
+<td width="50%"><img src="img/normal.png" alt="normal" width="100%"></td>
+</tr>
+</table>
+
+*Albedo and normal inputs. Note that the normal is the raw floating point value, which is why the right side is black (negative value).*
 
 Denoising itself appears to be a fast operation, as seen in the Nsight timings below, so you should not expect it to significantly impact performance per frame with it enabled in the preview.
 
@@ -329,6 +337,7 @@ __global__ void finalGather(int nPaths, glm::vec3* image, PathSegment* iteration
 ```
 
 This translates to a small but noticeable performance improvement:
+
 ![soa_vs_aos](img/soa_vs_aos.png)
 
 The time saved per sample is very small (~0.3 ms), but it adds up over time.
