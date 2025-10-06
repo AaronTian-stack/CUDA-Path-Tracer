@@ -377,7 +377,7 @@ A couple extra renders.
 ![polly alt](img/polly_alt_render.png)
 ![helmet](img/helmet_render.png)
 
-## Model Credits
+## Model / Asset Credits
 
 - [Polly Low Poly Anime Character](https://sketchfab.com/3d-models/polly-low-poly-anime-character-66872127cde644d687fd25bd9e7a70f9)
 - [Serena Low Poly Character](https://sketchfab.com/3d-models/serena-low-poly-character-8c5ebd6a05bd4afcbdbf9a6e5dfa1d13)
@@ -385,3 +385,5 @@ A couple extra renders.
 - [Robot](https://sketchfab.com/3d-models/robot-435566387be94cbfbc623c3d45241769)
 - [NormalTangentMirrorTest](https://github.com/KhronosGroup/glTF-Sample-Models/tree/main/2.0/NormalTangentMirrorTest)
 - [DamagedHelmet](https://github.com/KhronosGroup/glTF-Sample-Models/tree/main/2.0/DamagedHelmet)
+- [Artist Workshop HDRI](https://polyhaven.com/a/artist_workshop)
+- [The Sky is on Fire HDRI](https://polyhaven.com/a/the_sky_is_on_fire)
