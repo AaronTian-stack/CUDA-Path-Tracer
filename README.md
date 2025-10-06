@@ -49,7 +49,7 @@ cmake ..
 cmake --build . --config Release
 ```
 
-You will need to have the CUDA toolkit installed and a working Vulkan driver. You should **not** need the Vulkan SDK to be installed in order to build or run the app.
+You should generate a Visual Studio project and build using MSBuild. You will need to have the CUDA toolkit installed and a working Vulkan driver. You should **not** need the Vulkan SDK to be installed in order to build or run the app.
 
 Note that the included scene files expect the working directory to be a direct subdirectory of the root directory.
 
@@ -166,7 +166,7 @@ Ideally, it would be nice to look at something more interesting than spheres in 
 
 The glTF format uses PBR materials based on the roughness and metallic specular model. This fits perfectly with the shading model I implemented. Materials can have a texture map and a constant value for albedo, roughness/metallic, normal map, and emission. If these texture maps are present, they are used during shading.
 
-I also use the camera defined in the glTF file if it exists. This lets me easily set up scenes in a 3D modeling program such as Blender and export them for use in my path tracer.
+I also use the camera defined in the glTF file if it exists. This lets me easily frame scenes in a 3D modeling program such as Blender and export them for use in my path tracer.
 
 <div align="center">
   <img src="img/robot_render.png" alt="robot">
@@ -216,13 +216,122 @@ Performance-wise, all we do is pick a random point in the disk, compute a tangen
 
 ### Performance Features
 
+All scenes are rendered at 800p resolution, with a trace depth of 4. Stream compaction and Bounding Volume Intersection is enabled unless otherwise noted. 
+
 #### CUDA-Vulkan Interop using Vulkan 1.3
+
+The preview image is displayed using Vulkan. A texture in Vulkan is allocated, to which CUDA essentially copies the current accumulated image divided by the current number of iterations to using a dedicated CUDA kernel. The texture is accessed by CUDA by importing it as an external memory object. This texture is blitted to the swapchain image for display, then the ImGui interface is drawn using the dynamic rendering extension. 
+
+To synchronize access to the texture between CUDA and Vulkan, such that CUDA finishes writing to the texture before Vulkan uses it, a Vulkan semaphore is similarly exported as an external semaphore object such that CUDA can signal it after pathtracing kernels are complete. Vulkan rendering work waits on this semaphore before blitting the texture and drawing ImGui.
+
+The app queues two frames in flight. Each frame, the CPU signals a timeline semaphore with an expected incrementing value for when that frame is ready to be reused (when the blit and ImGui draw for that frame is done). If the current frame value is less than the expected value, the CPU waits on the timeline semaphore until it reaches that value before reusing the frame. This ensures that the GPU has finished rendering that frame before we reuse its resources (command pool, binary semaphores for acquiring swapchain image, etc.). The timeline semaphore saves us from having to use one VkFence per frame.
+
+Performance-wise, this GPU side CUDA-Vulkan synchronization theoretically should be faster than forcing the CPU to wait for CUDA to finish before proceeding with Vulkan rendering (`cudaDeviceSynchronize`). The CPU *should* be able to queue work more quickly this way, but in practice I doubt there will be a large difference due to the long time the CUDA kernels take to execute (overall frame will be very long).
+
+Basic performance comparison I did:
+
+![gl_vk](img/opengl_vulkan.png)
+
+I changed quite a lot during the rewrite of the base code, so this is not an apples-to-apples comparison. In addition, I am only able to test with the Cornell box scene because I added many of the path tracer's features such as glTF loading after switching to Vulkan. I would take the above graph with a large grain of salt. In general, this app is not CPU limited so I would not expect major gains from using Vulkan, if any at all.
 
 #### Stream Compaction
 
-#### Ray Sorting
+In a naive GPU path tracer, terminated rays (those that have reached a light source, entered the void, or exceeded the maximum trace depth), are still processed in future iterations even though there is no more work to be done. We should not be launching threads for these rays at all. Stream compaction (technically partition) solves this issue by moving terminated rays to the end of the ray buffer array such that we only launch threads for the still active rays in the front of the array. 
+
+![compaction](img/stream_compaction.png)
+
+We get a nice improvement in the more complex scenes (which also happen to all be open scenes). The Cornell box does not see the same benefit most likely because it is a closed scene (the walls cover all sides and a large portion of the view). Rays are less likely to escape into the void or reach a light and thus end early, so most rays are still active until the maximum trace depth is reached. Thus the partition is not able to cull as many rays.
+
+#### Material Sorting
+
+Another possible "optimization" is to sort the rays by material ID before running the shading kernel. This should improve memory coherence when accessing the materials buffer. However in practice this does not really work:
+
+![sorting](img/material_sorting.png)
+
+In every scene material sorting makes performance worse, especially in the simple Cornell box scene. This is likely because the overhead of sorting an especially small number of materials outweighs any potential gains from better memory coherence. 
 
 #### Bounding Volume Intersection
+
+When rendering triangle models, we normally would iterate over every single triangle whenever a ray does an intersection. However, we can skip testing against certain groups of triangles entirely by enclosing them in a bounding volume (a box). For each primitive in the glTF mesh, a bounding box is calculated for use in the intersection kernel. When a ray is traced, we first test for intersection against the bounding box. If there is no intersection, we skip testing against all triangles in that primitive. If there is an intersection, we then test against all triangles in that primitive as normal.
+
+![bvi](img/bounding_volume.png)
+
+This simple optimization makes a large difference in most of the above tested scenes. In the robot scene there is not a large improvement. This is likely because the robot model takes up a large portion of the view which will cause most initial rays to intersect with the bounding box. Ideally, threads within a warp are coherent: an entire warp of rays should either all intersect or all miss the bounding box. If we were to repeat this bounding box scheme recursively based on the triangles in the mesh, we could build a BVH (bounding volume hierarchy) which would yield even better improvements.
+
+#### Switching Ray Segments to Struct of Arrays
+
+I switched the path segment struct to a struct of arrays to improve memory coalescing when accessing the ray data:
+
+```C++
+// NEW 
+struct PathSegments
+{
+    glm::vec3* origins;
+    glm::vec3* directions;
+    glm::vec3* colors;
+    int* pixel_indices;
+    int* remaining_bounces;
+};
+// OLD
+struct Ray
+{
+    glm::vec3 origin;
+    glm::vec3 direction;
+};
+struct PathSegment
+{
+    Ray ray;
+    glm::vec3 color;
+    int pixelIndex;
+    int remainingBounces;
+};
+```
+The reasoning for this was because I noticed segment data was always accessed in a strided manner (only one member of the struct at a time). In the original shading and gather kernel (which is where segments are accessed the most) the only attribute we read is the color:
+
+```C++
+__global__ void shadeFakeMaterial(
+    int iter,
+    int num_paths,
+    ShadeableIntersection* shadeableIntersections,
+    PathSegment* pathSegments,
+    Material* materials)
+{
+...
+        ShadeableIntersection intersection = shadeableIntersections[idx];
+        ...
+            if (material.emittance > 0.0f) 
+            {
+                pathSegments[idx].color *= (materialColor * material.emittance);
+            }
+            else 
+            {
+                ...
+                pathSegments[idx].color *= (materialColor * lightTerm) * 0.3f + ((1.0f - intersection.t * 0.02f) * materialColor) * 0.7f;
+                pathSegments[idx].color *= u01(rng); // apply some noise because why not
+            }
+        ...
+        else 
+        {
+            pathSegments[idx].color = glm::vec3(0.0f);
+        }
+    }
+}
+```
+
+```C++
+__global__ void finalGather(int nPaths, glm::vec3* image, PathSegment* iterationPaths)
+{
+...
+        PathSegment iterationPath = iterationPaths[index];
+        image[iterationPath.pixelIndex] += iterationPath.color;
+...
+}
+```
+
+This translates to a small but noticeable performance improvement:
+![soa_vs_aos](img/soa_vs_aos.png)
+
+The time saved per sample is very small (~0.3 ms), but it adds up over time.
 
 ## Dependencies
 
@@ -246,6 +355,8 @@ Performance-wise, all we do is pick a random point in the disk, compute a tangen
 - [ACES Filmic Tone Mapping Curve](https://knarkowicz.wordpress.com/2016/01/06/aces-filmic-tone-mapping-curve/)
 - [PBR Neutral Tone Mapping](https://github.com/KhronosGroup/ToneMapping/blob/main/PBR_Neutral/pbrNeutral.glsl)
 - [Color palettes by Inigo Quilez](https://iquilezles.org/articles/palettes/)
+- [CUDA-Vulkan VkImage Interop Forum Post](https://forums.developer.nvidia.com/t/cuda-vulkan-vkimage-interop/278691)
+- [NVIDIA CUDA Samples](https://github.com/NVIDIA/cuda-samples/tree/master/Samples/5_Domain_Specific/vulkanImageCUDA)
 
 ## Extra Renders
 
