@@ -142,14 +142,16 @@ One sample is just a small portion of the full integral in the rendering equatio
 
 Given the same number of samples, the denoised image is much cleaner. The denoiser takes in the albedo and normal buffers of the image as auxiliary inputs to help it better preserve edges and details. Since I only denoise the image when the option is selected in the preview menu or when the desired number of samples is reached and the render is saved to disk, I consider this to be a purely visual feature rather than a performance feature. When viewing the denoised image in the preview, the image is denoised every set number of iterations (not every frame).
 
-<table>
-<tr>
-<td width="50%"><img src="img/albedo.png" alt="albedo" width="100%"></td>
-<td width="50%"><img src="img/normal.png" alt="normal" width="100%"></td>
-</tr>
-</table>
+<div align="center">
+  <table>
+  <tr>
+  <td width="50%"><img src="img/albedo.png" alt="albedo" width="100%"></td>
+  <td width="50%"><img src="img/normal.png" alt="normal" width="100%"></td>
+  </tr>
+  </table>
 
-*Albedo and normal inputs. Note that the normal is the raw floating point value, which is why the right side is black (negative value).*
+  <p>Albedo and normal inputs. Note that the normal is the raw floating point value, which is why the right side is black (negative value).</p>
+</div>
 
 Denoising itself appears to be a fast operation, as seen in the Nsight timings below, so you should not expect it to significantly impact performance per frame with it enabled in the preview.
 
